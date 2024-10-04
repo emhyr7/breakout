@@ -29,12 +29,18 @@ void *Allocator::reallocate(uint size, void *memory, uint alignment, uint new_si
 }
 
 template<typename T>
-void Array<T>::initialize(uint count, Allocator *allocator)
+Array<T>::Array(uint capacity, Allocator *allocator)
+{
+  this->initialize(capacity, allocator);
+}
+
+template<typename T>
+void Array<T>::initialize(uint capacity, Allocator *allocator)
 {
   this->items    = 0;
   this->capacity = 0;
   this->count    = 0;
-  this->ensure_capacity(this->capacity * sizeof(T), allocator);
+  this->ensure_capacity(capacity, allocator);
 }
 
 template<typename T>
@@ -80,4 +86,3 @@ void Array<T>::ensure_capacity(uint count, Allocator *allocator)
     this->reallocate(this->capacity, allocator);
   }
 }
-

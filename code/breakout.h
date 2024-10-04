@@ -22,7 +22,7 @@
 #include <glm/mat4x4.hpp>
 
 #include <cstdlib>
-#include <iostream>
+#include <cstdio>
 #include <stdexcept>
 
 #define countof(x) (sizeof(x) / sizeof(x[0]))
@@ -69,19 +69,21 @@ extern Allocator *default_allocator;
 template<typename T = byte>
 struct Array
 {
-  T *items;
-  uint capacity;
-  uint count;
+  T *items = 0;
+  uint capacity = 0;
+  uint count = 0;
 
-  void initialize(uint count, Allocator *allocator = default_allocator);
+  Array(uint capacity = 0, Allocator *allocator = default_allocator);
+
+  void initialize(uint capacity = 0, Allocator *allocator = default_allocator);
 
   uint space();
 
-  T *get(uint index);
+  T *get(uint index = 0);
 
-  T *push(uint count, Allocator *allocator = default_allocator);
+  T *push(uint count = 1, Allocator *allocator = default_allocator);
 
-  void pop(uint count);
+  void pop(uint count = 1);
 
   void reallocate(uint count, Allocator *allocator = default_allocator);
 

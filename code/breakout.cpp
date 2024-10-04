@@ -1,5 +1,7 @@
 #include "breakout.h"
 
+#include "breakout_commons.cpp"
+
 class Breakout
 {
 public: 
@@ -44,6 +46,8 @@ private:
   /* Vulkan properties */
   VkInstance               vk_instance;
   VkDebugUtilsMessengerEXT vk_debug_messenger;
+  VkPhysicalDevice         vk_physical_device;
+  VkDevice                 vk_device;
 
 /******************************************************************************/
   
@@ -71,83 +75,30 @@ private:
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void*                                       user_data)
   {
-    std::cout << "[Vulkan] ";
+    printf("[Vulkan] ");
 
     switch (message_severity)
     {     
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: std::cout << "[verbose] "; break;
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    std::cout << "[info] ";    break;
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: std::cout << "[warning] "; break;
-    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   std::cout << "[error] ";   break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: printf("[verbose] "); break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    printf("[info] ");    break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: printf("[warning] "); break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   printf("[error] ");   break;
     default: break;
     }
 
-    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)                std::cout << "[general] ";
-    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)             std::cout << "[validation] ";
-    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)            std::cout << "[performance] ";
-    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT) std::cout << "[device_address_binding] ";
+    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)                printf("[general] ");
+    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)             printf("[validation] ");
+    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)            printf("[performance] ");
+    if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT) printf("[device_address_binding] ");
 
-    std::cout << callback_data->pMessage << std::endl;
+    printf("%s\n", callback_data->pMessage);
     return VK_FALSE;
   }
-  
-  void initialize(void)
+
+  void initialize_vulkan(void)
   {
-    /* initialize Win32 */
+    /* create an instance */
     {
-      this->win32_application_instance = GetModuleHandle(0);
-      GetStartupInfo(&this->win32_startup_info);
-
-      const wchar_t window_class_name[] = L"M";
-      WNDCLASS window_class =
-      {
-        .style         = CS_HREDRAW | CS_VREDRAW,
-        .lpfnWndProc   = this->win32_process_window_message,
-        .cbClsExtra    = 0,
-        .cbWndExtra    = 0,
-        .hInstance     = this->win32_application_instance,
-        .hIcon         = 0,
-        .hCursor       = 0,
-        .hbrBackground = 0,
-        .lpszMenuName  = 0,
-        .lpszClassName = window_class_name,
-      };
-      RegisterClass(&window_class);
-      this->win32_window_handle = CreateWindowEx(
-        WS_EX_OVERLAPPEDWINDOW,
-        window_class_name,
-        this->wide_application_name,
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        0,
-        0,
-        this->win32_application_instance,
-        0);
-      if (!this->win32_window_handle) throw std::runtime_error("Failed to create the main window.");
-      ShowWindow(this->win32_window_handle, this->win32_startup_info.wShowWindow);
-    }
-
-    /* initialize Vulkan */
-    {
-    #if 0
-      uint32_t extensions_count;
-      vkEnumerateInstanceExtensionProperties(0, &extensions_count, 0);
-      VkExtensionProperties *extensions = new VkExtensionProperties[extensions_count];
-      vkEnumerateInstanceExtensionProperties(0, &extensions_count, extensions);
-      for (uint32_t i = 0; i < extensions_count; ++i)
-        std::cout << i << ": " << extensions[i].extensionName << '\n';
-
-      uint32_t layers_count;
-      vkEnumerateInstanceLayerProperties(&layers_count, 0);
-      VkLayerProperties *layers = new VkLayerProperties[layers_count];
-      vkEnumerateInstanceLayerProperties(&layers_count, layers);
-      for (uint32_t i = 0; i < layers_count; ++i)
-        std::cout << i << ": " << layers[i].layerName << '\n';
-    #endif
-
       VkApplicationInfo application_info =
       {
         .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -205,15 +156,134 @@ private:
     #endif
 
       VkResult result = vkCreateInstance(&instance_creation_info, 0, &this->vk_instance);
-      if (result != VK_SUCCESS) throw std::runtime_error("Failed to create Vulkan instance.");
+      if (result != VK_SUCCESS) throw std::runtime_error("Failed to create an instance for Vulkan.");
 
     #if defined(DEBUGGING)
       auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(this->vk_instance, "vkCreateDebugUtilsMessengerEXT");
       if (!vkCreateDebugUtilsMessengerEXT) throw std::runtime_error("Failed to get `vkCreateDebugUtilsMessengerEXT`.");
       result = vkCreateDebugUtilsMessengerEXT(this->vk_instance, &debug_messenger_creation_info, 0, &vk_debug_messenger);
-      if (result != VK_SUCCESS) throw std::runtime_error("Failed to create the VUlkan debug messenger.");
+      if (result != VK_SUCCESS) throw std::runtime_error("Failed to create a debug messenger for Vulkan.");
     #endif
     }
+
+    /* find a suitable physical devce */
+    {
+      uint32_t physical_devices_count;
+      vkEnumeratePhysicalDevices(this->vk_instance, &physical_devices_count, 0);
+      if (!physical_devices_count) throw std::runtime_error("Failed to enumerate physical devices for Vulkan");
+      Array<VkPhysicalDevice> physical_devices;
+      physical_devices.push(physical_devices_count);
+      vkEnumeratePhysicalDevices(this->vk_instance, &physical_devices_count, physical_devices.get());
+      Array<VkPhysicalDevice> suitable_physical_devices{physical_devices_count};
+      for (uint32_t i = 0; i < physical_devices_count; ++i)
+      {
+        VkPhysicalDevice           physical_device = *physical_devices.get(i);       
+        VkPhysicalDeviceProperties physical_device_properties;
+        VkPhysicalDeviceFeatures   physical_device_features;
+
+        vkGetPhysicalDeviceProperties(physical_device, &physical_device_properties);
+        vkGetPhysicalDeviceFeatures(physical_device, &physical_device_features);
+
+        bool suitable = physical_device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && physical_device_features.geometryShader;
+
+        /* find queue families */
+        {
+          uint32_t queue_families_count;
+          vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_families_count, 0);
+          Array<VkQueueFamilyProperties> queue_families_properties;
+          queue_families_properties.push(queue_families_count);
+          vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_families_count, queue_families_properties.get());
+
+          struct QueueFamilyIndexes
+          {
+            uint32_t graphics;
+            uint32_t compute;
+            uint32_t transfer;
+            uint32_t sparse_binding;
+        
+            bool has_graphics : 1       = false;
+            bool has_compute : 1        = false;
+            bool has_transfer : 1       = false;
+            bool has_sparse_binding : 1 = false;
+          } indexes;
+
+          for (uint32_t i = 0; i < queue_families_count; ++i)
+          {
+            VkQueueFamilyProperties *properties = queue_families_properties.get(i);
+            if (!indexes.has_graphics && properties->queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            {
+              indexes.graphics = i;
+              indexes.has_graphics = true;
+            }
+            if (!indexes.has_compute && properties->queueFlags & VK_QUEUE_COMPUTE_BIT)
+            {
+              indexes.compute = i;
+              indexes.has_compute = true;
+            }
+            if (!indexes.has_transfer && properties->queueFlags & VK_QUEUE_TRANSFER_BIT)
+            {
+              indexes.transfer = i;
+              indexes.has_transfer = true;
+            }
+            if (!indexes.has_sparse_binding && properties->queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)
+            {
+              indexes.sparse_binding = i;
+              indexes.has_sparse_binding = true;
+            }
+          }
+
+          bool has_all_indexes = indexes.has_graphics && indexes.has_compute && indexes.has_transfer && indexes.has_sparse_binding;
+          if (!has_all_indexes) suitable = false;
+        }
+
+        if (suitable) *suitable_physical_devices.push() = physical_device;
+      }
+      /* TODO: rate each device, then choose which device has the highest rating. */
+      this->vk_physical_device = *suitable_physical_devices.get();
+      if (!this->vk_physical_device) std::runtime_error("Failed to find a suitable physical device for Vulkan.");
+    }
+  }
+  
+  void initialize(void)
+  {
+    /* initialize Win32 */
+    {
+      this->win32_application_instance = GetModuleHandle(0);
+      GetStartupInfo(&this->win32_startup_info);
+
+      const wchar_t window_class_name[] = L"M";
+      WNDCLASS window_class =
+      {
+        .style         = CS_HREDRAW | CS_VREDRAW,
+        .lpfnWndProc   = this->win32_process_window_message,
+        .cbClsExtra    = 0,
+        .cbWndExtra    = 0,
+        .hInstance     = this->win32_application_instance,
+        .hIcon         = 0,
+        .hCursor       = 0,
+        .hbrBackground = 0,
+        .lpszMenuName  = 0,
+        .lpszClassName = window_class_name,
+      };
+      RegisterClass(&window_class);
+      this->win32_window_handle = CreateWindowEx(
+        WS_EX_OVERLAPPEDWINDOW,
+        window_class_name,
+        this->wide_application_name,
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        0,
+        0,
+        this->win32_application_instance,
+        0);
+      if (!this->win32_window_handle) throw std::runtime_error("Failed to create the main window.");
+      ShowWindow(this->win32_window_handle, this->win32_startup_info.wShowWindow);
+    }
+
+    this->initialize_vulkan();
   }
 
   void terminate(void)
@@ -245,7 +315,7 @@ int main(void)
   }
   catch (const std::exception &e)
   {
-    std::cerr << e.what() << std::endl;
+    fprintf(stderr, "%s", e.what());
     return EXIT_FAILURE;
   }
 
