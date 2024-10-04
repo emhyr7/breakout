@@ -26,3 +26,64 @@
 #include <stdexcept>
 
 #define countof(x) (sizeof(x) / sizeof(x[0]))
+
+using namespace glm;
+
+using byte = uint8_t;
+
+using uintb = uint8_t;
+using uints = uint16_t;
+using uint  = uint32_t;
+using uintl = uint64_t;
+
+constexpr uint universal_alignment = alignof(max_align_t);
+
+using Address = uintptr_t;
+
+uint get_backward_alignment(Address address, uint alignment);
+
+uint get_forward_alignment(Address address, uint alignment);
+
+struct Allocator
+{
+  using AllocateProcedure   = void *(uint, uint, void *);
+  using DeallocateProcedure = void  (uint, void *, uint, void *);
+  using ReallocateProcedure = void *(uint, void *, uint, uint, uint, void *);
+
+  void *state;
+  AllocateProcedure   *allocate_procedure;
+  DeallocateProcedure *deallocate_procedure;
+  ReallocateProcedure *reallocate_procedure;
+
+  /* stenography */
+
+  void *allocate(uint size, uint alignment);
+ 
+  void deallocate(uint size, void *memory, uint alignment);
+
+  void *reallocate(uint size, void *memory, uint alignment, uint new_size, uint new_alignment);
+};
+
+extern Allocator *default_allocator;
+
+template<typename T = byte>
+struct Array
+{
+  T *items;
+  uint capacity;
+  uint count;
+
+  void initialize(uint count, Allocator *allocator = default_allocator);
+
+  uint space();
+
+  T *get(uint index);
+
+  T *push(uint count, Allocator *allocator = default_allocator);
+
+  void pop(uint count);
+
+  void reallocate(uint count, Allocator *allocator = default_allocator);
+
+  void ensure_capacity(uint count, Allocator *allocator = default_allocator);
+};
