@@ -218,7 +218,6 @@ private:
 
   void terminate(void)
   {
-
   #if defined(DEBUGGING) 
     auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(this->vk_instance, "vkDestroyDebugUtilsMessengerEXT");
     if (vkDestroyDebugUtilsMessengerEXT) vkDestroyDebugUtilsMessengerEXT(this->vk_instance, this->vk_debug_messenger, 0);
@@ -227,7 +226,7 @@ private:
   }
 };
 
-Breakout breakout;
+static Breakout breakout;
 
 int main(void)
 {

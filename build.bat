@@ -2,6 +2,9 @@
 setlocal
 cd /D "%~dp0"
 
-set CFLAGS=-std=c++17 -O0 -g
+:: if not exist build (mkdir build)
 
-clang++ %CFLAGS% -lUser32 -lgdi32 -lvulkan-1 -o breakout.exe code\breakout.cpp code\breakout_commons.cpp
+set compilation_flags=-std=c++17 -O0 -g -lUser32 -lgdi32 -lvulkan-1
+set files=code\breakout.cpp code\breakout_commons.cpp
+
+clang++ %compilation_flags% -o breakout.exe %files%
