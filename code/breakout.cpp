@@ -1,31 +1,110 @@
-#if defined(_DEBUG) || !defined(NDEBUG)
-  #define DEBUGGING 1
-#endif
-
-#define UNICODE
-#if defined(UNICODE)
-  #define _UNICODE
-#endif
-
-#if defined(UNICODE)
-  #define USING_UNICODE
-#endif
-
-#include <Windows.h>
-
-#include <vulkan/vulkan.h>
-
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
-#include <cstdlib>
-#include <iostream>
-#include <stdexcept>
-
-#define countof(x) (sizeof(x) / sizeof(x[0]))
+#include "breakout.h"
 
 using namespace glm;
+
+using byte = uint8_t;
+
+using uintb = uint8_t;
+using uints = uint16_t;
+using uint  = uint32_t;
+using uintl = uint64_t;
+
+constexpr uint universal_alignment = alignof(max_align_t);
+
+using Address = uintptr_t;
+
+inline uint get_backward_alignment(Address address, uint alignment)
+{
+  return alignment ? address & (alignment - 1) : 0;
+}
+
+inline uint get_forward_alignment(Address address, uint alignment)
+{
+  uint modulus = get_backward_alignment(address, alignment);
+  return modulus ? alignment - modulus : 0;
+}
+
+struct Allocator
+{
+  using AllocateProcedure   = void *(uint, uint, void *);
+  using DeallocateProcedure = void  (uint, void *, uint, void *);
+  using ReallocateProcedure = void *(uint, void *, uint, uint, uint, void *);
+
+  void *state;
+  AllocateProcedure   *allocate_procedure;
+  DeallocateProcedure *deallocate_procedure;
+  ReallocateProcedure *reallocate_procedure;
+
+  /* stenography */
+
+  void *allocate(uint size, uint alignment) { return this->allocate_procedure(size, alignment, this->state); }
+ 
+  void deallocate(uint size, void *memory, uint alignment) { return this->deallocate_procedure(size, memory, alignment, this->state); }
+
+  void *reallocate(uint size, void *memory, uint alignment, uint new_size, uint new_alignment) { return this->reallocate_procedure(size, memory, alignment, size, new_alignment, this->state); }
+};
+
+Allocator *default_allocator;
+
+template<typename T = byte>
+struct Array
+{
+  T   *items;
+  uint capacity;
+  uint count;
+
+  void initialize(uint count, Allocator *allocator = default_allocator)
+  {
+    this->items    = 0;
+    this->capacity = 0;
+    this->count    = 0;
+    this->ensure_capacity(this->capacity * sizeof(T), allocator);
+  }
+
+  uint space() { return this->capacity - this->count; }
+
+  T *get(uint index) { return this->items + index; }
+
+  T *push(uint count, Allocator *allocator = default_allocator);
+
+  void pop(uint count);
+
+  void reallocate(uint count, Allocator *allocator = default_allocator);
+
+  void ensure_capacity(uint count, Allocator *allocator = default_allocator);
+};
+
+template<typename T>
+inline T *Array<T>::push(uint count, Allocator *allocator)
+{
+  this->ensure_capacity(count, allocator);
+  T *result = this->items + this->count;
+  this->count += count;
+  return result;
+}
+
+template<typename T>
+inline void Array<T>::pop(uint count)
+{
+  if (count > this->count) count = this->count;
+  this->count -= count;
+}
+
+template<typename T>
+void Array<T>::reallocate(uint count, Allocator *allocator)
+{
+  this->items = (T *)allocator->reallocate(this->count * sizeof(T), this->items, alignof(T), count * sizeof(T), alignof(T));
+}
+
+template<typename T>
+void Array<T>::ensure_capacity(uint count, Allocator *allocator)
+{
+  if (count > this->space())
+  {
+    this->capacity += count + this->capacity / 2;
+    this->reallocate(this->capacity, allocator);
+  }
+}
 
 class Breakout
 {
@@ -99,6 +178,7 @@ private:
     void*                                       user_data)
   {
     std::cout << "[Vulkan] ";
+
     switch (message_severity)
     {     
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: std::cout << "[verbose] "; break;
@@ -257,6 +337,15 @@ Breakout breakout;
 
 int main(void)
 {
+  Allocator allocator =
+  {
+    .state = 0,
+    .allocate_procedure   = [](uint size, uint alignment, void *state) -> void * { return malloc(size); },
+    .deallocate_procedure = [](uint size, void *memory, uint alignment, void *state) -> void { free(memory); },
+    .reallocate_procedure = [](uint size, void *memory, uint alignment, uint new_size, uint new_alignment, void *state) -> void * { return realloc(memory, size); },
+  };
+  default_allocator = &allocator;
+ 
   try
   {
     breakout.execute();
