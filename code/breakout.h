@@ -15,6 +15,7 @@
 
 #include <Windows.h>
 
+#define VK_USE_PLATFORM_WIN32_KHR 1
 #include <vulkan/vulkan.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -28,7 +29,6 @@
 #define countof(x) (sizeof(x) / sizeof(x[0]))
 
 using namespace glm;
-
 
 using byte = uint8_t;
 
@@ -46,6 +46,8 @@ using uintb = uint8;
 using uints = uint16;
 using uint  = uint32;
 using uintl = uint64;
+
+constexpr uint uint32_maximum = ~(uint32)0;
 
 using sintb = sint8;
 using sints = sint16;
@@ -70,9 +72,13 @@ uint get_maximum(uint left, uint right);
 
 uint get_minimum(uint left, uint right);
 
+uint clamp(uint value, uint minimum, uint maximum);
+
 void fill_memory(byte value, void *memory, uint size);
 
 uint get_string_length(const utf8 *string);
+
+sint compare_string(const utf8 *left, const utf8 *right);
 
 utf16 *make_terminated_utf16_string_from_utf8(uint *utf16_string_length, const utf8 *utf8_string);
 
