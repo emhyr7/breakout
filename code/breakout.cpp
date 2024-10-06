@@ -1,15 +1,16 @@
 #include "breakout.h"
 
 #include "breakout_commons.cpp"
+#include "breakout_allocators.cpp"
 
 class Breakout
 {
 public: 
   void execute(void)
   {
-    initialize();
+    this->initialize();
 
-    /* The *MIGHTY* "MAIN LOOP" */
+    /* main loop */
     for (;;)
     {
       {
@@ -18,7 +19,7 @@ public:
         else if (message_result < 0)
         {
           /* resolve error here */
-          throw std::runtime_error("Failed to process message.");
+          throw std::runtime_error("failed to process message.");
         }
         TranslateMessage(&this->win32_window_message);
         DispatchMessage(&this->win32_window_message);
@@ -27,7 +28,7 @@ public:
       if (this->requested_quit) break;
     }
 
-    terminate();
+    this->terminate();
   }
 
 private:
@@ -44,10 +45,10 @@ private:
   MSG          win32_window_message;
 
   /* Vulkan properties */
-  VkInstance               vk_instance;
-  VkDebugUtilsMessengerEXT vk_debug_messenger;
-  VkPhysicalDevice         vk_physical_device;
-  VkDevice                 vk_device;
+  VkInstance               vk_instance        = 0;
+  VkDebugUtilsMessengerEXT vk_debug_messenger = 0;
+  VkPhysicalDevice         vk_physical_device = 0;
+  VkDevice                 vk_device          = 0;
 
 /******************************************************************************/
   
@@ -75,6 +76,9 @@ private:
     const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void*                                       user_data)
   {
+    if (message_severity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+      return VK_FALSE;
+    
     printf("[Vulkan] ");
 
     switch (message_severity)
@@ -97,6 +101,9 @@ private:
 
   void initialize_vulkan(void)
   {
+    Scratch scratch;
+    context->allocator->derive(&scratch);
+
     /* create an instance */
     {
       VkApplicationInfo application_info =
@@ -121,7 +128,6 @@ private:
       const char *enabled_extension_names[] =
       {
       #if defined(DEBUGGING)
-        "VK_EXT_debug_report",
         "VK_EXT_debug_utils",
       #endif
         "VK_KHR_surface",
@@ -156,92 +162,76 @@ private:
     #endif
 
       VkResult result = vkCreateInstance(&instance_creation_info, 0, &this->vk_instance);
-      if (result != VK_SUCCESS) throw std::runtime_error("Failed to create an instance for Vulkan.");
+      if (result != VK_SUCCESS) throw std::runtime_error("failed to create an instance for Vulkan.");
 
-    #if defined(DEBUGGING)
+    #if defined(DEBUGGING)   
       auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(this->vk_instance, "vkCreateDebugUtilsMessengerEXT");
-      if (!vkCreateDebugUtilsMessengerEXT) throw std::runtime_error("Failed to get `vkCreateDebugUtilsMessengerEXT`.");
-      result = vkCreateDebugUtilsMessengerEXT(this->vk_instance, &debug_messenger_creation_info, 0, &vk_debug_messenger);
-      if (result != VK_SUCCESS) throw std::runtime_error("Failed to create a debug messenger for Vulkan.");
+      if (!vkCreateDebugUtilsMessengerEXT) throw std::runtime_error("failed to get `vkCreateDebugUtilsMessengerEXT`.");
+      result = vkCreateDebugUtilsMessengerEXT(this->vk_instance, &debug_messenger_creation_info, 0, &this->vk_debug_messenger);
+      if (result != VK_SUCCESS) throw std::runtime_error("failed to create a debug messenger for Vulkan.");
     #endif
     }
 
-    /* find a suitable physical devce */
+    /* find a suitable physical device */
     {
       uint32_t physical_devices_count;
       vkEnumeratePhysicalDevices(this->vk_instance, &physical_devices_count, 0);
-      if (!physical_devices_count) throw std::runtime_error("Failed to enumerate physical devices for Vulkan");
-      Array<VkPhysicalDevice> physical_devices;
-      physical_devices.push(physical_devices_count);
-      vkEnumeratePhysicalDevices(this->vk_instance, &physical_devices_count, physical_devices.get());
-      Array<VkPhysicalDevice> suitable_physical_devices{physical_devices_count};
+      if (!physical_devices_count) throw std::runtime_error("failed to enumerate physical devices for Vulkan");
+      VkPhysicalDevice *physical_devices = scratch.push<VkPhysicalDevice>(physical_devices_count);
+      vkEnumeratePhysicalDevices(this->vk_instance, &physical_devices_count, physical_devices);
+
+      uint highest_score = 0;
       for (uint32_t i = 0; i < physical_devices_count; ++i)
       {
-        VkPhysicalDevice           physical_device = *physical_devices.get(i);       
+        VkPhysicalDevice           physical_device = physical_devices[i];
         VkPhysicalDeviceProperties physical_device_properties;
         VkPhysicalDeviceFeatures   physical_device_features;
-
         vkGetPhysicalDeviceProperties(physical_device, &physical_device_properties);
         vkGetPhysicalDeviceFeatures(physical_device, &physical_device_features);
 
+        uint score = 0;
         bool suitable = physical_device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && physical_device_features.geometryShader;
 
         /* find queue families */
         {
           uint32_t queue_families_count;
           vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_families_count, 0);
-          Array<VkQueueFamilyProperties> queue_families_properties;
-          queue_families_properties.push(queue_families_count);
-          vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_families_count, queue_families_properties.get());
+          VkQueueFamilyProperties *queue_families_properties = scratch.push<VkQueueFamilyProperties>(queue_families_count);
+          vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_families_count, queue_families_properties);
 
-          struct QueueFamilyIndexes
+          struct
           {
             uint32_t graphics;
-            uint32_t compute;
-            uint32_t transfer;
-            uint32_t sparse_binding;
         
-            bool has_graphics : 1       = false;
-            bool has_compute : 1        = false;
-            bool has_transfer : 1       = false;
-            bool has_sparse_binding : 1 = false;
+            bool has_graphics : 1 = false;
           } indexes;
 
           for (uint32_t i = 0; i < queue_families_count; ++i)
           {
-            VkQueueFamilyProperties *properties = queue_families_properties.get(i);
+            VkQueueFamilyProperties *properties = queue_families_properties + i;
             if (!indexes.has_graphics && properties->queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
               indexes.graphics = i;
               indexes.has_graphics = true;
             }
-            if (!indexes.has_compute && properties->queueFlags & VK_QUEUE_COMPUTE_BIT)
-            {
-              indexes.compute = i;
-              indexes.has_compute = true;
-            }
-            if (!indexes.has_transfer && properties->queueFlags & VK_QUEUE_TRANSFER_BIT)
-            {
-              indexes.transfer = i;
-              indexes.has_transfer = true;
-            }
-            if (!indexes.has_sparse_binding && properties->queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)
-            {
-              indexes.sparse_binding = i;
-              indexes.has_sparse_binding = true;
-            }
           }
 
-          bool has_all_indexes = indexes.has_graphics && indexes.has_compute && indexes.has_transfer && indexes.has_sparse_binding;
+          bool has_all_indexes = indexes.has_graphics;
           if (!has_all_indexes) suitable = false;
         }
 
-        if (suitable) *suitable_physical_devices.push() = physical_device;
+        if (suitable)
+        {
+          if (score <= highest_score) continue;
+          highest_score = score;
+          this->vk_physical_device = physical_device;
+        }
       }
-      /* TODO: rate each device, then choose which device has the highest rating. */
-      this->vk_physical_device = *suitable_physical_devices.get();
-      if (!this->vk_physical_device) std::runtime_error("Failed to find a suitable physical device for Vulkan.");
+
+      if (!this->vk_physical_device) std::runtime_error("failed to find a suitable physical device for Vulkan.");
     }
+
+    scratch.die();
   }
   
   void initialize(void)
@@ -279,14 +269,14 @@ private:
         0,
         this->win32_application_instance,
         0);
-      if (!this->win32_window_handle) throw std::runtime_error("Failed to create the main window.");
+      if (!this->win32_window_handle) throw std::runtime_error("failed to create the main window.");
       ShowWindow(this->win32_window_handle, this->win32_startup_info.wShowWindow);
     }
 
     this->initialize_vulkan();
   }
 
-  void terminate(void)
+  void terminate_vulkan(void)
   {
   #if defined(DEBUGGING) 
     auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(this->vk_instance, "vkDestroyDebugUtilsMessengerEXT");
@@ -294,20 +284,31 @@ private:
   #endif
     vkDestroyInstance(this->vk_instance, 0);
   }
+
+  void terminate(void)
+  {
+  }
 };
 
 static Breakout breakout;
 
-int main(void)
+int main()
 {
-  Allocator allocator =
+  Context default_context
   {
-    .state = 0,
-    .allocate_procedure   = [](uint size, uint alignment, void *state) -> void * { return malloc(size); },
-    .deallocate_procedure = [](uint size, void *memory, uint alignment, void *state) -> void { free(memory); },
-    .reallocate_procedure = [](uint size, void *memory, uint alignment, uint new_size, uint new_alignment, void *state) -> void * { return realloc(memory, size); },
+    .default_allocator =
+    {
+      .allocate_procedure   = [](uint size, uint alignment, void *state) -> void *{ return malloc(size); },
+      .deallocate_procedure = [](void *memory, uint size, void *state) -> void { free(memory); },
+      .reallocate_procedure = [](void *memory, uint size, uint new_size, uint new_alignment, void *state) -> void * { return realloc(memory, new_size); },
+      .push_procedure       = [](uint size, uint alignment, void *state) -> void *{ return ((Context *)state)->linear_allocator.push(size, alignment); },
+      .derive_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator.derive((Linear_Allocator_Derivative *)derivative); },
+      .revert_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator.revert((Linear_Allocator_Derivative *)derivative); },
+    },
+    .allocator = &default_context.default_allocator,
   };
-  default_allocator = &allocator;
+  context = &default_context;
+  context->default_allocator.state = context;
  
   try
   {
@@ -318,6 +319,8 @@ int main(void)
     fprintf(stderr, "%s", e.what());
     return EXIT_FAILURE;
   }
+
+  printf("goodbye!");
 
   return EXIT_SUCCESS;
 }

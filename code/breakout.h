@@ -38,54 +38,55 @@ using uintl = uint64_t;
 
 constexpr uint universal_alignment = alignof(max_align_t);
 
+constexpr uint memory_page_size = 4096;
+
 using Address = uintptr_t;
 
 uint get_backward_alignment(Address address, uint alignment);
 
 uint get_forward_alignment(Address address, uint alignment);
 
-struct Allocator
+uint get_maximum(uint left, uint right);
+
+uint get_minimum(uint left, uint right);
+
+void fill_memory(byte value, void *memory, uint size);
+
+#include "breakout_allocators.h"
+
+struct Context
 {
-  using AllocateProcedure   = void *(uint, uint, void *);
-  using DeallocateProcedure = void  (uint, void *, uint, void *);
-  using ReallocateProcedure = void *(uint, void *, uint, uint, uint, void *);
-
-  void *state;
-  AllocateProcedure   *allocate_procedure;
-  DeallocateProcedure *deallocate_procedure;
-  ReallocateProcedure *reallocate_procedure;
-
-  /* stenography */
-
-  void *allocate(uint size, uint alignment);
- 
-  void deallocate(uint size, void *memory, uint alignment);
-
-  void *reallocate(uint size, void *memory, uint alignment, uint new_size, uint new_alignment);
+  Linear_Allocator linear_allocator;
+  Allocator        default_allocator;
+  Allocator       *allocator;
 };
 
-extern Allocator *default_allocator;
+extern thread_local Context *context;
 
-template<typename T = byte>
+using Scratch = Linear_Allocator_Derivative;
+
+#if 0
+
+template<typename T>
 struct Array
 {
-  T *items = 0;
-  uint capacity = 0;
-  uint count = 0;
+  T *items;
+  uint count;
+  uint capacity;
 
-  Array(uint capacity = 0, Allocator *allocator = default_allocator);
-
-  void initialize(uint capacity = 0, Allocator *allocator = default_allocator);
+  void initialize(uint capacity);
 
   uint space();
 
   T *get(uint index = 0);
 
-  T *push(uint count = 1, Allocator *allocator = default_allocator);
+  T *push(uint count = 1);
 
   void pop(uint count = 1);
 
-  void reallocate(uint count, Allocator *allocator = default_allocator);
+  void reallocate(uint count);
 
-  void ensure_capacity(uint count, Allocator *allocator = default_allocator);
+  void ensure_capacity(uint count);
 };
+
+#endif

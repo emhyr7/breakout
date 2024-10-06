@@ -11,36 +11,32 @@ inline uint get_forward_alignment(Address address, uint alignment)
   return modulus ? alignment - modulus : 0;
 }
 
-Allocator *default_allocator;
-
-void *Allocator::allocate(uint size, uint alignment)
+inline uint get_maximum(uint left, uint right)
 {
-  return this->allocate_procedure(size, alignment, this->state);
+  return left >= right ? left : right;
 }
 
-void Allocator::deallocate(uint size, void *memory, uint alignment)
+inline uint get_minimum(uint left, uint right)
 {
-  return this->deallocate_procedure(size, memory, alignment, this->state);
+  return left <= right ? left : right;
 }
 
-void *Allocator::reallocate(uint size, void *memory, uint alignment, uint new_size, uint new_alignment)
+inline void fill_memory(byte value, void *memory, uint size)
 {
-  return this->reallocate_procedure(size, memory, alignment, size, new_alignment, this->state);
+  memset(memory, value, size);
 }
+
+thread_local Context *context;
+
+#if 0 /* */
 
 template<typename T>
-Array<T>::Array(uint capacity, Allocator *allocator)
-{
-  this->initialize(capacity, allocator);
-}
-
-template<typename T>
-void Array<T>::initialize(uint capacity, Allocator *allocator)
+void Array<T>::initialize(uint capacity)
 {
   this->items    = 0;
   this->capacity = 0;
   this->count    = 0;
-  this->ensure_capacity(capacity, allocator);
+  this->ensure_capacity(capacity);
 }
 
 template<typename T>
@@ -56,9 +52,9 @@ T *Array<T>::get(uint index)
 }
 
 template<typename T>
-T *Array<T>::push(uint count, Allocator *allocator)
+T *Array<T>::push(uint count)
 {
-  this->ensure_capacity(count, allocator);
+  this->ensure_capacity(count);
   T *result = this->items + this->count;
   this->count += count;
   return result;
@@ -72,17 +68,19 @@ void Array<T>::pop(uint count)
 }
 
 template<typename T>
-void Array<T>::reallocate(uint count, Allocator *allocator)
+void Array<T>::reallocate(uint count)
 {
-  this->items = (T *)allocator->reallocate(this->count * sizeof(T), this->items, alignof(T), count * sizeof(T), alignof(T));
+  this->items = (T *)context->allocator->reallocate(this->items, this->count * sizeof(T), count * sizeof(T), alignof(T));
 }
 
 template<typename T>
-void Array<T>::ensure_capacity(uint count, Allocator *allocator)
+void Array<T>::ensure_capacity(uint count)
 {
   if (count > this->space())
   {
     this->capacity += count + this->capacity / 2;
-    this->reallocate(this->capacity, allocator);
+    this->reallocate(this->capacity);
   }
 }
+
+#endif
