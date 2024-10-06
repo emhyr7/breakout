@@ -46,7 +46,7 @@ void Linear_Allocator_Derivative::revert(Linear_Allocator_Derivative *derivative
   this->allocator->revert(derivative);
 }
 
-void Linear_Allocator_Derivative::die()
+void Linear_Allocator_Derivative::die(void)
 {
   this->allocator->revert(this);
 }
