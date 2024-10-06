@@ -98,7 +98,7 @@ extern thread_local Context context;
 
 using Scratch = Linear_Allocator_Derivative;
 
-#if 0
+#if 0 /* excluded since it's useless ATM */
 
 template<typename T>
 struct Array

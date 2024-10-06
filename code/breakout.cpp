@@ -9,12 +9,11 @@ public:
   {
     this->initialize();
 
-    /* main loop */
+    /* the main loop */
+    Scratch scratch;
+    context.allocator->derive(&scratch);
     for (;;)
     {
-      Scratch scratch;
-      context.allocator->derive(&scratch);
-
       /* retrieve and process window messages */
       {
         int message_result = GetMessage(&this->win32_window_message, 0, 0, 0);
@@ -113,7 +112,6 @@ private:
       0);
     if (!this->win32_window_handle) throw std::runtime_error("failed to create the main window.");
     ShowWindow(this->win32_window_handle, this->win32_startup_info.wShowWindow);
-
     scratch.die();
   }
 
@@ -367,7 +365,7 @@ utf16 *make_terminated_utf16_string_from_utf8(uint *utf16_string_length, const u
 
 thread_local Context context;
 
-#if 0 /* */
+#if 0 /* excluded since it's useless ATM */
 
 template<typename T>
 void Array<T>::initialize(uint capacity)
