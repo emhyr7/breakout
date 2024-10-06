@@ -27,7 +27,8 @@ struct Allocator
 
   void *reallocate(void *memory, uint size, uint new_size, uint new_alignment);
 
-  void *push(uint size, uint alignment);
+  template<typename T = byte>
+  T *push(uint count, uint alignment = alignof(T));
 
   void derive(void *derivative);
 

@@ -15,9 +15,11 @@ void *Allocator::reallocate(void *memory, uint size, uint new_size, uint new_ali
   return this->reallocate_procedure(memory, size, size, new_alignment, this->state);
 }
 
-void *Allocator::push(uint size, uint alignment)
+template<typename T>
+T *Allocator::push(uint count, uint alignment)
 {
-  return this->push_procedure(size, alignment, this->state);
+  uint size = count * sizeof(T);
+  return (T *)this->push_procedure(size, alignment, this->state);
 }
 
 void Allocator::derive(void *derivative)
@@ -60,7 +62,7 @@ T *Linear_Allocator::push(uint count, uint alignment)
   {
     this->minimum_block_size = get_maximum(this->default_minimum_block_size, this->minimum_block_size);
     uint new_block_size = get_maximum(size, this->minimum_block_size);
-    Memory_Block *new_block = (Memory_Block *)context->allocator->allocate(sizeof(*new_block) + new_block_size, alignof(Memory_Block));
+    Memory_Block *new_block = (Memory_Block *)context.allocator->allocate(sizeof(*new_block) + new_block_size, alignof(Memory_Block));
     new_block->size = new_block_size;
     new_block->mass = 0;
     new_block->memory = new_block->tailing_memory;
@@ -87,7 +89,7 @@ void Linear_Allocator::revert(Linear_Allocator_Derivative *derivative)
   {
     if (this->block == derivative->block) break;
     Memory_Block *prior = this->block->prior;
-    context->allocator->deallocate(this->block, sizeof(Memory_Block) + this->block->size);
+    context.allocator->deallocate(this->block, sizeof(Memory_Block) + this->block->size);
     this->block = prior;
   }
   assert(block == derivative->block);

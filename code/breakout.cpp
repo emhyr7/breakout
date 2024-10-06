@@ -13,7 +13,7 @@ public:
     for (;;)
     {
       Scratch scratch;
-      context->allocator->derive(&scratch);
+      context.allocator->derive(&scratch);
 
       /* retrieve and process window messages */
       {
@@ -36,9 +36,8 @@ public:
   }
 
 private:
-  static constexpr wchar_t  wide_application_name[] = L"BREAKOUT";
-  static constexpr char     application_name[]      =  "BREAKOUT";
-  static constexpr uint32_t application_version     = VK_MAKE_VERSION(1, 0, 0);
+  static constexpr char     application_name[]  =  "BREAKOUT";
+  static constexpr uint32_t application_version = VK_MAKE_VERSION(1, 0, 0);
 
   bool requested_quit : 1 = false;
 
@@ -74,6 +73,50 @@ private:
     return result;
   }
 
+  void initialize_win32(void)
+  {
+    Scratch scratch;
+    context.allocator->derive(&scratch);
+
+    this->win32_application_instance = GetModuleHandle(0);
+    GetStartupInfo(&this->win32_startup_info);
+
+    const wchar_t window_class_name[] = L"M";
+    WNDCLASS window_class =
+    {
+      .style         = CS_HREDRAW | CS_VREDRAW,
+      .lpfnWndProc   = this->win32_process_window_message,
+      .cbClsExtra    = 0,
+      .cbWndExtra    = 0,
+      .hInstance     = this->win32_application_instance,
+      .hIcon         = 0,
+      .hCursor       = 0,
+      .hbrBackground = 0,
+      .lpszMenuName  = 0,
+      .lpszClassName = window_class_name,
+    };
+    RegisterClass(&window_class);
+    uint wide_application_name_length;
+    utf16 *wide_application_name = make_terminated_utf16_string_from_utf8(&wide_application_name_length, this->application_name);
+    this->win32_window_handle = CreateWindowEx(
+      WS_EX_OVERLAPPEDWINDOW,
+      window_class_name,
+      wide_application_name,
+      WS_OVERLAPPEDWINDOW,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      0,
+      0,
+      this->win32_application_instance,
+      0);
+    if (!this->win32_window_handle) throw std::runtime_error("failed to create the main window.");
+    ShowWindow(this->win32_window_handle, this->win32_startup_info.wShowWindow);
+
+    scratch.die();
+  }
+
   static VKAPI_ATTR VkBool32 VKAPI_CALL vk_process_debug_message(
     VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
     VkDebugUtilsMessageTypeFlagsEXT             message_types,
@@ -106,7 +149,7 @@ private:
   void initialize_vulkan(void)
   {
     Scratch scratch;
-    context->allocator->derive(&scratch);
+    context.allocator->derive(&scratch);
 
     /* create an instance */
     {
@@ -240,50 +283,17 @@ private:
   
   void initialize(void)
   {
-    /* initialize Win32 */
+    /* initialize modules */
     {
-      this->win32_application_instance = GetModuleHandle(0);
-      GetStartupInfo(&this->win32_startup_info);
-
-      const wchar_t window_class_name[] = L"M";
-      WNDCLASS window_class =
-      {
-        .style         = CS_HREDRAW | CS_VREDRAW,
-        .lpfnWndProc   = this->win32_process_window_message,
-        .cbClsExtra    = 0,
-        .cbWndExtra    = 0,
-        .hInstance     = this->win32_application_instance,
-        .hIcon         = 0,
-        .hCursor       = 0,
-        .hbrBackground = 0,
-        .lpszMenuName  = 0,
-        .lpszClassName = window_class_name,
-      };
-      RegisterClass(&window_class);
-      this->win32_window_handle = CreateWindowEx(
-        WS_EX_OVERLAPPEDWINDOW,
-        window_class_name,
-        this->wide_application_name,
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        0,
-        0,
-        this->win32_application_instance,
-        0);
-      if (!this->win32_window_handle) throw std::runtime_error("failed to create the main window.");
-      ShowWindow(this->win32_window_handle, this->win32_startup_info.wShowWindow);
+      this->initialize_win32();
+      this->initialize_vulkan();
     }
-
-    this->initialize_vulkan();
   }
 
   void terminate_vulkan(void)
   {
   #if defined(DEBUGGING) 
-    auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(this->vk_instance, "vkDestroyDebugUtilsMessengerEXT");
+    auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(this->vk_instance, "vkDestroyDebugUtilsMessengerEXT");
     if (vkDestroyDebugUtilsMessengerEXT) vkDestroyDebugUtilsMessengerEXT(this->vk_instance, this->vk_debug_messenger, 0);
   #endif
     vkDestroyInstance(this->vk_instance, 0);
@@ -298,34 +308,17 @@ static Breakout breakout;
 
 int main(void)
 {
-  Context default_context
-  {
-    .default_allocator =
-    {
-      .allocate_procedure   = [](uint size, uint alignment, void *state) -> void *{ return malloc(size); },
-      .deallocate_procedure = [](void *memory, uint size, void *state) -> void { free(memory); },
-      .reallocate_procedure = [](void *memory, uint size, uint new_size, uint new_alignment, void *state) -> void * { return realloc(memory, new_size); },
-      .push_procedure       = [](uint size, uint alignment, void *state) -> void *{ return ((Context *)state)->linear_allocator.push(size, alignment); },
-      .derive_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator.derive((Linear_Allocator_Derivative *)derivative); },
-      .revert_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator.revert((Linear_Allocator_Derivative *)derivative); },
-    },
-    .allocator = &default_context.default_allocator,
-  };
-  context = &default_context;
-  context->default_allocator.state = context;
- 
   try
   {
     breakout.execute();
   }
   catch (const std::exception &e)
   {
-    fprintf(stderr, "%s", e.what());
+    MessageBoxA(0, e.what(), 0, 0);
     return EXIT_FAILURE;
   }
 
   printf("goodbye!");
-
   return EXIT_SUCCESS;
 }
 
@@ -357,7 +350,22 @@ inline void fill_memory(byte value, void *memory, uint size)
   memset(memory, value, size);
 }
 
-thread_local Context *context;
+inline uint get_string_length(const char *string)
+{
+  return strlen(string);
+}
+
+utf16 *make_terminated_utf16_string_from_utf8(uint *utf16_string_length, const utf8 *utf8_string)
+{
+  int possibly_utf16_string_length = MultiByteToWideChar(CP_UTF8, 0, utf8_string, get_string_length(utf8_string), 0, 0);
+  assert(possibly_utf16_string_length >= 0);
+  *utf16_string_length = possibly_utf16_string_length + 1;
+  utf16 *utf16_string = context.allocator->push<utf16>(*utf16_string_length);
+  assert(MultiByteToWideChar(CP_UTF8, 0, utf8_string, get_string_length(utf8_string), utf16_string, *utf16_string_length) >= 0);
+  return utf16_string;
+}
+
+thread_local Context context;
 
 #if 0 /* */
 
@@ -401,7 +409,7 @@ void Array<T>::pop(uint count)
 template<typename T>
 void Array<T>::reallocate(uint count)
 {
-  this->items = (T *)context->allocator->reallocate(this->items, this->count * sizeof(T), count * sizeof(T), alignof(T));
+  this->items = (T *)context.allocator->reallocate(this->items, this->count * sizeof(T), count * sizeof(T), alignof(T));
 }
 
 template<typename T>
