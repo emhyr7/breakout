@@ -81,6 +81,10 @@ private:
   VkFormat                 vk_swapchain_format;
   VkExtent2D               vk_swapchain_extent;
 
+  /* shaders */
+  VkShaderModule vk_basic_frag_shader;
+  VkShaderModule vk_basic_vert_shader;
+
 /******************************************************************************/
   
   static LRESULT CALLBACK win32_process_window_message(HWND window_handle, UINT message, WPARAM wparam, LPARAM lparam)
@@ -194,6 +198,11 @@ private:
 
     printf("%s\n", callback_data->pMessage);
     return VK_FALSE;
+  }
+
+  static VkShaderModule vk_create_shader(void *data, uint size)
+  {
+    return 0;
   }
 
   void initialize_vulkan(void)
@@ -662,6 +671,20 @@ private:
       }
     }
 
+    /* load shaders */
+    {
+      Context prior_context = context;
+      context.linear_allocator = &this->persistent_allocator;
+      uint basic_frag_data_size;
+      uint basic_vert_data_size;
+      void *basic_frag_data = read_from_file_quickly(&basic_frag_data_size, "data/basic.frag.spv");
+      void *basic_vert_data = read_from_file_quickly(&basic_vert_data_size, "data/basic.vert.spv");
+      context = prior_context;
+
+      this->vk_basic_vert_shader = this->vk_create_shader(basic_frag_data, basic_frag_data_size);
+      this->vk_basic_frag_shader = this->vk_create_shader(basic_vert_data, basic_vert_data_size);
+    }
+
     /* create a pipeline */
     {
     }
@@ -767,6 +790,48 @@ utf16 *make_terminated_utf16_string_from_utf8(uint *utf16_string_length, const u
   utf16 *utf16_string = context.allocator->push<utf16>(*utf16_string_length);
   assert(MultiByteToWideChar(CP_UTF8, 0, utf8_string, get_string_length(utf8_string), utf16_string, *utf16_string_length) >= 0);
   return utf16_string;
+}
+
+Handle open_file(const char *path)
+{
+  Scratch scratch;
+  context.allocator->derive(&scratch);
+  uint utf16_path_length;
+  const utf16 *utf16_path = make_terminated_utf16_string_from_utf8(&utf16_path_length, path);
+  HANDLE handle = CreateFile(utf16_path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  if (handle == INVALID_HANDLE_VALUE) throw std::runtime_error("Failed to open file.");
+  scratch.die();
+  return handle;
+}
+
+uintl get_size_of_file(Handle handle)
+{
+  LARGE_INTEGER win32_size;
+  if (!GetFileSizeEx(handle, &win32_size)) throw std::runtime_error("Failed to get file size.");
+  return win32_size.QuadPart;
+}
+
+uint read_from_file(void *buffer, uint size, Handle handle)
+{
+  DWORD bytes_read;
+  if (!ReadFile(handle, buffer, size, &bytes_read, 0)) throw std::runtime_error("Failed to read file.");
+  return bytes_read;
+}
+
+void *read_from_file_quickly(uint *size, const char *path)
+{
+  Handle handle = open_file(path);
+  *size = get_size_of_file(handle);
+  void *data = (void *)context.allocator->push(*size);
+  read_from_file(data, *size, handle);
+  close_file(handle);
+  return data;
+  
+}
+
+void close_file(Handle handle)
+{
+  CloseHandle(handle);
 }
 
 thread_local Context context;

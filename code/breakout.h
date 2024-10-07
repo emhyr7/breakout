@@ -14,6 +14,8 @@
 #endif
 
 #include <Windows.h>
+#include <tchar.h>
+#include <strsafe.h>
 
 #define VK_USE_PLATFORM_WIN32_KHR 1
 #include <vulkan/vulkan.h>
@@ -82,20 +84,33 @@ sint compare_string(const utf8 *left, const utf8 *right);
 
 utf16 *make_terminated_utf16_string_from_utf8(uint *utf16_string_length, const utf8 *utf8_string);
 
+using Handle = HANDLE;
+
+Handle open_file(const char *path);
+
+uintl get_size_of_file(Handle handle);
+
+uint read_from_file(Handle handle);
+
+void *read_from_file_quickly(uint *size, const char *path);
+
+void close_file(Handle handle);
+
 #include "breakout_allocators.h"
 
 struct Context
 {
-  Linear_Allocator linear_allocator;
+  Linear_Allocator default_linear_allocator;
+  Linear_Allocator *linear_allocator = &default_linear_allocator;
   Allocator default_allocator =
   {
     .state = this,
     .allocate_procedure   = [](uint size, uint alignment, void *state) -> void *{ return malloc(size); },
     .deallocate_procedure = [](void *memory, uint size, void *state) -> void { free(memory); },
     .reallocate_procedure = [](void *memory, uint size, uint new_size, uint new_alignment, void *state) -> void * { return realloc(memory, new_size); },
-    .push_procedure       = [](uint size, uint alignment, void *state) -> void *{ return ((Context *)state)->linear_allocator.push(size, alignment); },
-    .derive_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator.derive((Linear_Allocator_Derivative *)derivative); },
-    .revert_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator.revert((Linear_Allocator_Derivative *)derivative); },
+    .push_procedure       = [](uint size, uint alignment, void *state) -> void *{ return ((Context *)state)->linear_allocator->push(size, alignment); },
+    .derive_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator->derive((Linear_Allocator_Derivative *)derivative); },
+    .revert_procedure     = [](void *derivative, void *state) { ((Context *)state)->linear_allocator->revert((Linear_Allocator_Derivative *)derivative); },
   };
   Allocator *allocator = &this->default_allocator;
 };
