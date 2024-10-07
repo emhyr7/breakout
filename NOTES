@@ -16,7 +16,7 @@ graphics pipelines:
 	-> color blending (fixed-function)
 		* applies mixing operations for pixels overlapped with fragments.
 
-anything that isn't a fix function can be programmed by the user.
+anything that isn't a "fixed-function" can be programmed by the user.
 
 some phases disableable.
 

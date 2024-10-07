@@ -662,6 +662,10 @@ private:
       }
     }
 
+    /* create a pipeline */
+    {
+    }
+
     scratch.die();
   }
   
