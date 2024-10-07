@@ -82,8 +82,8 @@ private:
   VkExtent2D               vk_swapchain_extent;
 
   /* shaders */
-  VkShaderModule vk_basic_frag_shader;
   VkShaderModule vk_basic_vert_shader;
+  VkShaderModule vk_basic_frag_shader;
 
 /******************************************************************************/
   
@@ -102,7 +102,12 @@ private:
       }
     case WM_DESTROY:
     case WM_QUIT:
+    quit:
       self->requested_quit = true;
+      break;
+
+    case WM_KEYDOWN:
+      if (wparam == VK_ESCAPE) goto quit;
       break;
 
     case WM_SIZE:
@@ -200,9 +205,19 @@ private:
     return VK_FALSE;
   }
 
-  static VkShaderModule vk_create_shader(void *data, uint size)
+  VkShaderModule vk_load_shader(const void *data, uint size)
   {
-    return 0;
+    VkShaderModuleCreateInfo creation_info =
+    {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .pNext = 0,
+      .flags = 0,
+      .codeSize = size,
+      .pCode    = (uint32_t *)data,
+    };
+    VkShaderModule shader;
+    if (vkCreateShaderModule(this->vk_device, &creation_info, 0, &shader) != VK_SUCCESS) throw std::runtime_error("Failed to create a shader module for Vulkan.");
+    return shader;
   }
 
   void initialize_vulkan(void)
@@ -675,14 +690,12 @@ private:
     {
       Context prior_context = context;
       context.linear_allocator = &this->persistent_allocator;
-      uint basic_frag_data_size;
-      uint basic_vert_data_size;
-      void *basic_frag_data = read_from_file_quickly(&basic_frag_data_size, "data/basic.frag.spv");
-      void *basic_vert_data = read_from_file_quickly(&basic_vert_data_size, "data/basic.vert.spv");
+      Span<uintb> basic_vert = read_from_file_quickly("data/basic.vert.spv");
+      Span<uintb> basic_frag = read_from_file_quickly("data/basic.frag.spv");
       context = prior_context;
 
-      this->vk_basic_vert_shader = this->vk_create_shader(basic_frag_data, basic_frag_data_size);
-      this->vk_basic_frag_shader = this->vk_create_shader(basic_vert_data, basic_vert_data_size);
+      this->vk_basic_frag_shader = this->vk_load_shader(basic_vert.items, basic_vert.count);
+      this->vk_basic_vert_shader = this->vk_load_shader(basic_frag.items, basic_frag.count);
     }
 
     /* create a pipeline */
@@ -703,6 +716,9 @@ private:
 
   void terminate_vulkan(void)
   {
+    vkDestroyShaderModule(this->vk_device, this->vk_basic_vert_shader, 0);
+    vkDestroyShaderModule(this->vk_device, this->vk_basic_frag_shader, 0);
+    
     for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
       vkDestroyImageView(this->vk_device, this->vk_swapchain_image_views[i], 0);
 
@@ -818,14 +834,15 @@ uint read_from_file(void *buffer, uint size, Handle handle)
   return bytes_read;
 }
 
-void *read_from_file_quickly(uint *size, const char *path)
+Span<uintb> read_from_file_quickly( const char *path)
 {
   Handle handle = open_file(path);
-  *size = get_size_of_file(handle);
-  void *data = (void *)context.allocator->push(*size);
-  read_from_file(data, *size, handle);
+  Span<uintb> result;
+  result.count = get_size_of_file(handle);
+  result.items = context.allocator->push(result.count);
+  read_from_file(result.items, result.count, handle);
   close_file(handle);
-  return data;
+  return result;
   
 }
 

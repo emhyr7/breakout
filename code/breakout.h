@@ -66,6 +66,9 @@ constexpr uint memory_page_size = 4096;
 
 using Address = uintptr_t;
 
+template<typename T>
+struct Span { T *items; uint count; };
+
 uint get_backward_alignment(Address address, uint alignment);
 
 uint get_forward_alignment(Address address, uint alignment);
@@ -92,7 +95,7 @@ uintl get_size_of_file(Handle handle);
 
 uint read_from_file(Handle handle);
 
-void *read_from_file_quickly(uint *size, const char *path);
+Span<uintb> read_from_file_quickly(const char *path);
 
 void close_file(Handle handle);
 
