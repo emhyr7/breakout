@@ -4,7 +4,7 @@
 
 class Breakout
 {
-public: 
+public:
   void execute(void)
   {
     this->initialize();
@@ -12,23 +12,42 @@ public:
     /* the main loop */
     Scratch scratch;
     context.allocator->derive(&scratch);
+
     for (;;)
     {
+      scratch.die();
+
       /* retrieve and process window messages */
+      while (PeekMessage(&this->win32_window_message, 0, 0, 0, PM_REMOVE))
       {
-        int message_result = GetMessage(&this->win32_window_message, 0, 0, 0);
-        if (!message_result) this->requested_quit = 1;
-        else if (message_result < 0)
-        {
-          /* resolve error here */
-          throw std::runtime_error("failed to process message.");
-        }
         TranslateMessage(&this->win32_window_message);
         DispatchMessage(&this->win32_window_message);
       }
-
-      scratch.die();
       if (this->requested_quit) break;
+
+    #if 0
+      if (this->window_resized)
+      {
+        VkSurfaceCapabilitiesKHR capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->vk_physical_device, this->vk_surface, &capabilities);
+        
+        if (capabilities.currentExtent.width != uint32_maximum)
+          this->vk_swapchain_extent = capabilities.currentExtent;
+        else
+        {
+          RECT rect;
+          GetClientRect(this->win32_window, &rect);
+          this->vk_swapchain_extent =
+          {
+            .width  = clamp(rect.right - rect.left, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+            .height = clamp(rect.bottom - rect.top, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+          };
+        }
+        printf("this->vk_swapchain_extent:\n");
+        printf("\twidth: %u\n", this->vk_swapchain_extent.width);
+        printf("\theight: %u\n", this->vk_swapchain_extent.height);
+      }
+    #endif
     }
 
     this->terminate();
@@ -38,15 +57,15 @@ private:
   static constexpr char     application_name[]  =  "BREAKOUT";
   static constexpr uint32_t application_version = VK_MAKE_VERSION(1, 0, 0);
 
-  bool requested_quit : 1 = false;
+  Linear_Allocator persistent_allocator;
 
-  /* Win32 properties */
+  bool requested_quit : 1 = 0;
+
   HINSTANCE    win32_instance;
   STARTUPINFOW win32_startup_info;
   HWND         win32_window;
   MSG          win32_window_message;
 
-  /* Vulkan properties */
   VkInstance               vk_instance           = 0;
   VkDebugUtilsMessengerEXT vk_debug_messenger    = 0;
   VkSurfaceKHR             vk_surface            = 0;
@@ -55,18 +74,45 @@ private:
   VkQueue                  vk_graphics_queue     = 0;
   VkQueue                  vk_presentation_queue = 0;
   VkSwapchainKHR           vk_swapchain          = 0;
+  VkImage                 *vk_swapchain_images;
+  VkImageView             *vk_swapchain_image_views;
+  uint                     vk_swapchain_images_count;
+  uint                     vk_swapchain_images_capacity;
+  VkFormat                 vk_swapchain_format;
+  VkExtent2D               vk_swapchain_extent;
 
 /******************************************************************************/
   
   static LRESULT CALLBACK win32_process_window_message(HWND window_handle, UINT message, WPARAM wparam, LPARAM lparam)
   {
     LRESULT result = 0;
+    Breakout *self = (Breakout *)GetWindowLongPtr(window_handle, GWLP_USERDATA);
 
     switch (message)
     {
+    case WM_CREATE:
+      {
+        const CREATESTRUCT *creation_info = (const CREATESTRUCT *)lparam;
+        SetWindowLongPtr(window_handle, GWLP_USERDATA, (LONG_PTR)creation_info->lpCreateParams);
+        break;
+      }
     case WM_DESTROY:
-      PostQuitMessage(0);
+    case WM_QUIT:
+      self->requested_quit = true;
       break;
+
+    case WM_SIZE:
+    case WM_PAINT:
+      result = DefWindowProc(window_handle, message, wparam, lparam);
+      break;
+
+    case WM_ENTERSIZEMOVE:
+      break;
+    case WM_EXITSIZEMOVE:
+      break;
+
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP:
 
     default:
       result = DefWindowProc(window_handle, message, wparam, lparam);
@@ -85,9 +131,10 @@ private:
     GetStartupInfo(&this->win32_startup_info);
 
     const wchar_t window_class_name[] = L"M";
-    WNDCLASS window_class =
+    WNDCLASSEX window_class =
     {
-      .style         = CS_HREDRAW | CS_VREDRAW,
+      .cbSize        = sizeof(window_class),
+      .style         = 0,
       .lpfnWndProc   = this->win32_process_window_message,
       .cbClsExtra    = 0,
       .cbWndExtra    = 0,
@@ -97,15 +144,16 @@ private:
       .hbrBackground = 0,
       .lpszMenuName  = 0,
       .lpszClassName = window_class_name,
+      .hIconSm       = 0,
     };
-    RegisterClass(&window_class);
+    RegisterClassEx(&window_class);
     uint wide_application_name_length;
     utf16 *wide_application_name = make_terminated_utf16_string_from_utf8(&wide_application_name_length, this->application_name);
     this->win32_window = CreateWindowEx(
       WS_EX_OVERLAPPEDWINDOW,
       window_class_name,
       wide_application_name,
-      WS_OVERLAPPEDWINDOW,
+      WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME,
       CW_USEDEFAULT,
       CW_USEDEFAULT,
       CW_USEDEFAULT,
@@ -113,7 +161,7 @@ private:
       0,
       0,
       this->win32_instance,
-      0);
+      this);
     if (!this->win32_window) throw std::runtime_error("failed to create the main window.");
     ShowWindow(this->win32_window, this->win32_startup_info.wShowWindow);
     scratch.die();
@@ -215,7 +263,7 @@ private:
         .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         .messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT,
         .pfnUserCallback = vk_process_debug_message,
-        .pUserData       = 0,
+        .pUserData       = this,
       };
       instance_creation_info.pNext = &debug_messenger_creation_info;
     #endif
@@ -466,6 +514,11 @@ private:
       }
 
       if (!this->vk_physical_device) std::runtime_error("failed to find a suitable physical device for Vulkan.");
+
+      /* store swapchain info */
+      this->vk_swapchain_images_capacity = swapchain_details.capabilities.maxImageCount;
+      this->vk_swapchain_format          = swapchain_details.format.format;
+      this->vk_swapchain_extent          = swapchain_details.extent;
     }
 
   #if 0
@@ -529,10 +582,8 @@ private:
       };
       VkResult result = vkCreateDevice(this->vk_physical_device, &device_creation_info, 0, &this->vk_device);
       if (result != VK_SUCCESS) throw std::runtime_error("failed to create a device for Vulkan.");
-    }
 
-    /* get queues */
-    {
+      /* get queues */
       vkGetDeviceQueue(this->vk_device, queue_stuff.graphics_family_index, 0, &this->vk_graphics_queue);
       vkGetDeviceQueue(this->vk_device, queue_stuff.presentation_family_index, 0, &this->vk_presentation_queue);
     }
@@ -545,7 +596,7 @@ private:
         .pNext = 0,
         .flags = 0,
         .surface          = this->vk_surface,
-        .minImageCount    = swapchain_details.images_count,
+        .minImageCount    = swapchain_details.images_count + 1,
         .imageFormat      = swapchain_details.format.format,
         .imageColorSpace  = swapchain_details.format.colorSpace,
         .imageExtent      = swapchain_details.extent,
@@ -572,6 +623,43 @@ private:
       }
       VkResult result = vkCreateSwapchainKHR(this->vk_device, &swapchain_creation_info, 0, &this->vk_swapchain);
       if (result != VK_SUCCESS) throw std::runtime_error("failed to create a swapchain for Vulkan.");
+
+      /* get images */
+      this->vk_swapchain_images = this->persistent_allocator.push<VkImage>(this->vk_swapchain_images_capacity);
+      vkGetSwapchainImagesKHR(this->vk_device, this->vk_swapchain, &this->vk_swapchain_images_count, 0);
+      vkGetSwapchainImagesKHR(this->vk_device, this->vk_swapchain, &this->vk_swapchain_images_count, this->vk_swapchain_images);
+
+      /* get image views */
+      this->vk_swapchain_image_views = this->persistent_allocator.push<VkImageView>(this->vk_swapchain_images_capacity);
+      for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
+      {
+        VkImageViewCreateInfo creation_info =
+        {
+          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+          .pNext = 0,
+          .flags = 0,
+          .image            = this->vk_swapchain_images[i],
+          .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+          .format           = this->vk_swapchain_format,
+          .components       =
+          {
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+          },
+          .subresourceRange =
+          {
+            .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel   = 0,
+            .levelCount     = 1,
+            .baseArrayLayer = 0,
+            .layerCount     = 1,
+          },
+        };
+        VkResult result = vkCreateImageView(this->vk_device, &creation_info, 0, &this->vk_swapchain_image_views[i]);
+        if (result != VK_SUCCESS) throw std::runtime_error("failed to create an image view for Vulkan.");
+      }
     }
 
     scratch.die();
@@ -588,6 +676,9 @@ private:
 
   void terminate_vulkan(void)
   {
+    for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
+      vkDestroyImageView(this->vk_device, this->vk_swapchain_image_views[i], 0);
+
     vkDestroySwapchainKHR(this->vk_device, this->vk_swapchain, 0);
     vkDestroySurfaceKHR(this->vk_instance, this->vk_surface, 0);
     vkDestroyDevice(this->vk_device, 0);
@@ -603,7 +694,7 @@ private:
   }
 };
 
-static Breakout breakout;
+Breakout breakout;
 
 int main(void)
 {

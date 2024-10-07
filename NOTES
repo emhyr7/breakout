@@ -1,0 +1,25 @@
+
+
+graphics pipelines:
+	-> input assembler (fixed-function)
+		* assembles vertexes.
+	-> vertex shader
+		* a program invoked for every vertex.
+	-> tessellation
+		* creates primitives from vertexes.
+	-> geometry shader
+		* a program invoked for every primitive.
+	-> rasterization (fixed-function)
+		* creates fragments from discretizing primitives.
+	-> fragment shader
+		* a program invoked for every fragment.
+	-> color blending (fixed-function)
+		* applies mixing operations for pixels overlapped with fragments.
+
+anything that isn't a fix function can be programmed by the user.
+
+some phases disableable.
+
+DEFINITIONS
+
+	"fixed-function" - a predefined function that you can pass arguments to.
