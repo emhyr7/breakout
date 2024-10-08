@@ -66,23 +66,25 @@ private:
   HWND         win32_window;
   MSG          win32_window_message;
 
-  VkInstance               vk_instance           = 0;
-  VkDebugUtilsMessengerEXT vk_debug_messenger    = 0;
-  VkSurfaceKHR             vk_surface            = 0;
-  VkPhysicalDevice         vk_physical_device    = 0;
-  VkDevice                 vk_device             = 0;
-  VkQueue                  vk_graphics_queue     = 0;
-  VkQueue                  vk_presentation_queue = 0;
-  VkSwapchainKHR           vk_swapchain          = 0;
+  VkInstance               vk_instance;
+  VkDebugUtilsMessengerEXT vk_debug_messenger;
+  VkSurfaceKHR             vk_surface;
+  VkPhysicalDevice         vk_physical_device;
+  VkDevice                 vk_device;
+  VkQueue                  vk_graphics_queue;
+  VkQueue                  vk_presentation_queue;
+  VkSwapchainKHR           vk_swapchain;
   VkImage                 *vk_swapchain_images;
   VkImageView             *vk_swapchain_image_views;
   uint                     vk_swapchain_images_count;
   uint                     vk_swapchain_images_capacity;
+  uint                     vk_swapchain_image_layers_count;
   VkFormat                 vk_swapchain_format;
   VkExtent2D               vk_swapchain_extent;
   VkRenderPass             vk_render_pass;
   VkPipelineLayout         vk_pipeline_layout;
   VkPipeline               vk_pipeline;
+  VkFramebuffer           *vk_swapchain_framebuffers;
 
   /* shaders */
   VkShaderModule vk_basic_vert_shader;
@@ -622,6 +624,7 @@ private:
 
     /* create a swapchain */
     {
+      this->vk_swapchain_image_layers_count = 1;
       VkSwapchainCreateInfoKHR swapchain_creation_info =
       {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -632,7 +635,7 @@ private:
         .imageFormat      = swapchain_details.format.format,
         .imageColorSpace  = swapchain_details.format.colorSpace,
         .imageExtent      = swapchain_details.extent,
-        .imageArrayLayers = 1,
+        .imageArrayLayers = this->vk_swapchain_image_layers_count,
         .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         /* */
         .preTransform     = swapchain_details.capabilities.currentTransform,
@@ -753,7 +756,7 @@ private:
       if (vkCreateRenderPass(this->vk_device, &creation_info, 0, &this->vk_render_pass) != VK_SUCCESS) throw std::runtime_error("Failed to create a render pass for Vulkan.");
     }
 
-    /* create a pipeline */
+    /* create the pipeline */
     {
       this->vk_basic_vert_shader = this->vk_load_shader("data/basic.vert.spv");
       this->vk_basic_frag_shader = this->vk_load_shader("data/basic.frag.spv");
@@ -941,6 +944,33 @@ private:
       if (vkCreateGraphicsPipelines(this->vk_device, VK_NULL_HANDLE, 1, &graphics_pipeline_creation_info, 0, &this->vk_pipeline) != VK_SUCCESS) throw std::runtime_error("Failed to create a graphics pipeline for Vulkan.");
     }
 
+    /* create framebuffers */
+    {
+      this->vk_swapchain_framebuffers = this->persistent_allocator.push<VkFramebuffer>(this->vk_swapchain_images_capacity);
+      for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
+      {
+        VkImageView attachments[] =
+        {
+          this->vk_swapchain_image_views[i],
+        };
+        constexpr uint attachments_count = countof(attachments);
+
+        VkFramebufferCreateInfo creation_info =
+        {
+          .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+          .pNext = 0,
+          .flags = 0,
+          .renderPass      = this->vk_render_pass,
+          .attachmentCount = attachments_count,
+          .pAttachments    = attachments,
+          .width           = this->vk_swapchain_extent.width,
+          .height          = this->vk_swapchain_extent.height,
+          .layers          = this->vk_swapchain_image_layers_count,
+        };
+        if (vkCreateFramebuffer(this->vk_device, &creation_info, 0, &this->vk_swapchain_framebuffers[i]) != VK_SUCCESS) throw std::runtime_error("Failed to create a framebuffer for Vulkan.");
+      }
+    }
+
     scratch.die();
   }
   
@@ -955,6 +985,9 @@ private:
 
   void terminate_vulkan(void)
   {
+    for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
+      vkDestroyFramebuffer(this->vk_device, this->vk_swapchain_framebuffers[i], 0);
+    
     vkDestroyPipeline(this->vk_device, this->vk_pipeline, 0);
     vkDestroyPipelineLayout(this->vk_device, this->vk_pipeline_layout, 0);
     vkDestroyRenderPass(this->vk_device, this->vk_render_pass, 0);
