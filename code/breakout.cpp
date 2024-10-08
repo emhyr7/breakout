@@ -57,22 +57,26 @@ private:
   static constexpr char     application_name[]  =  "BREAKOUT";
   static constexpr uint32_t application_version = VK_MAKE_VERSION(1, 0, 0);
 
+  /* general fields */
   Linear_Allocator persistent_allocator;
-
   bool requested_quit : 1 = 0;
 
+  /* Win32 fields */
   HINSTANCE    win32_instance;
   STARTUPINFOW win32_startup_info;
   HWND         win32_window;
   MSG          win32_window_message;
 
+  /* Vulkan fields */
   VkInstance               vk_instance;
   VkDebugUtilsMessengerEXT vk_debug_messenger;
   VkSurfaceKHR             vk_surface;
   VkPhysicalDevice         vk_physical_device;
   VkDevice                 vk_device;
   VkQueue                  vk_graphics_queue;
+  uint32_t                 vk_graphics_queue_family_index;
   VkQueue                  vk_presentation_queue;
+  uint32_t                 vk_presentation_queue_family_index;
   VkSwapchainKHR           vk_swapchain;
   VkImage                 *vk_swapchain_images;
   VkImageView             *vk_swapchain_image_views;
@@ -82,13 +86,15 @@ private:
   VkFormat                 vk_swapchain_format;
   VkExtent2D               vk_swapchain_extent;
   VkRenderPass             vk_render_pass;
-  VkPipelineLayout         vk_pipeline_layout;
-  VkPipeline               vk_pipeline;
+  VkShaderModule           vk_basic_vert_shader;
+  VkShaderModule           vk_basic_frag_shader;
+  VkPipelineLayout         vk_graphics_pipeline_layout;
+  VkPipeline               vk_graphics_pipeline;
   VkFramebuffer           *vk_swapchain_framebuffers;
+  VkCommandPool            vk_command_pool;
+  VkCommandBuffer         *vk_command_buffers;
+  uint                     vk_command_buffers_count;
 
-  /* shaders */
-  VkShaderModule vk_basic_vert_shader;
-  VkShaderModule vk_basic_frag_shader;
 
 /******************************************************************************/
   
@@ -228,6 +234,73 @@ private:
     VkShaderModule shader;
     if (vkCreateShaderModule(this->vk_device, &creation_info, 0, &shader) != VK_SUCCESS) throw std::runtime_error("Failed to create a shader module for Vulkan.");
     return shader;
+  }
+
+  void vk_record_command_buffer(VkCommandBuffer command_buffer, uint image_index)
+  {
+    VkCommandBufferBeginInfo beginning_info =
+    {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .pNext = 0,
+      .flags = 0,
+      .pInheritanceInfo = 0,
+    };
+    if (vkBeginCommandBuffer(command_buffer, &beginning_info) != VK_SUCCESS) throw std::runtime_error("Failed to begin recording a command buffer for Vulkan.");
+
+    VkClearValue clear_values[] =
+    {
+      {{{ 0.0f, 0.0f, 0.0f, 1.0f }}},
+    };
+    constexpr uint clear_values_count = countof(clear_values);
+    
+    VkRenderPassBeginInfo render_pass_beginning_info =
+    {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = 0,
+      .renderPass  = this->vk_render_pass,
+      .framebuffer = this->vk_swapchain_framebuffers[image_index],
+      .renderArea =
+      {
+        .offset = { 0, 0 },
+        .extent = this->vk_swapchain_extent,
+      },
+      .clearValueCount = clear_values_count,
+      .pClearValues    = clear_values,
+    };
+    vkCmdBeginRenderPass(command_buffer, &render_pass_beginning_info, VK_SUBPASS_CONTENTS_INLINE);
+    {
+      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, this->vk_graphics_pipeline);
+      
+      VkViewport viewports[] =
+      {
+        {
+          .x        = 0.0f,
+          .y        = 0.0f,
+          .width    = (float)this->vk_swapchain_extent.width,
+          .height   = (float)this->vk_swapchain_extent.height,
+          .minDepth = 0.0f,
+          .maxDepth = 1.0f,
+        },
+      };
+      constexpr uint viewports_count = countof(viewports);
+      vkCmdSetViewport(command_buffer, 0, viewports_count, viewports);
+
+      VkRect2D scissors[] =
+      {
+        {
+          .offset = { 0, 0 },
+          .extent = this->vk_swapchain_extent,
+        }
+      };
+      constexpr uint scissors_count = countof(scissors);
+      vkCmdSetScissor(command_buffer, 0, scissors_count, scissors);
+
+      constexpr uint vertexes_count = 3; /* hardcoded in the vertex shader */
+      constexpr uint instances_count = 1; /* idk what this is */
+      vkCmdDraw(command_buffer, vertexes_count, instances_count, 0, 0);
+    }
+    vkCmdEndRenderPass(command_buffer);
+    if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) throw std::runtime_error("Failed to end a command buffer for Vulkan");
   }
 
   void initialize_vulkan(void)
@@ -616,6 +689,9 @@ private:
       };
       VkResult result = vkCreateDevice(this->vk_physical_device, &device_creation_info, 0, &this->vk_device);
       if (result != VK_SUCCESS) throw std::runtime_error("failed to create a device for Vulkan.");
+    
+      this->vk_graphics_queue_family_index     = queue_stuff.graphics_family_index;
+      this->vk_presentation_queue_family_index = queue_stuff.presentation_family_index;
 
       /* get queues */
       vkGetDeviceQueue(this->vk_device, queue_stuff.graphics_family_index, 0, &this->vk_graphics_queue);
@@ -918,7 +994,7 @@ private:
         .pPushConstantRanges    = 0,
         
       };
-      if (vkCreatePipelineLayout(this->vk_device, &pipeline_layout_creation_info, 0, &this->vk_pipeline_layout) != VK_SUCCESS) throw std::runtime_error("Failed to create a pipeline layout for Vulkan.");
+      if (vkCreatePipelineLayout(this->vk_device, &pipeline_layout_creation_info, 0, &this->vk_graphics_pipeline_layout) != VK_SUCCESS) throw std::runtime_error("Failed to create a pipeline layout for Vulkan.");
 
       VkGraphicsPipelineCreateInfo graphics_pipeline_creation_info =
       {
@@ -935,13 +1011,13 @@ private:
         .pDepthStencilState  = 0,
         .pColorBlendState    = &color_blend_state_creation_info,
         .pDynamicState       = &dynamic_state_creation_info,
-        .layout              = this->vk_pipeline_layout,
+        .layout              = this->vk_graphics_pipeline_layout,
         .renderPass          = this->vk_render_pass,
         .subpass             = 0,
         .basePipelineHandle  = VK_NULL_HANDLE,
         .basePipelineIndex   = -1,
       };
-      if (vkCreateGraphicsPipelines(this->vk_device, VK_NULL_HANDLE, 1, &graphics_pipeline_creation_info, 0, &this->vk_pipeline) != VK_SUCCESS) throw std::runtime_error("Failed to create a graphics pipeline for Vulkan.");
+      if (vkCreateGraphicsPipelines(this->vk_device, VK_NULL_HANDLE, 1, &graphics_pipeline_creation_info, 0, &this->vk_graphics_pipeline) != VK_SUCCESS) throw std::runtime_error("Failed to create a graphics pipeline for Vulkan.");
     }
 
     /* create framebuffers */
@@ -971,6 +1047,29 @@ private:
       }
     }
 
+    /* create the command buffer */
+    {
+      VkCommandPoolCreateInfo pool_creation_info =
+      {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = this->vk_graphics_queue_family_index,
+      };
+      if (vkCreateCommandPool(this->vk_device, &pool_creation_info, 0, &this->vk_command_pool) != VK_SUCCESS) throw std::runtime_error("Failed to create a command pool for Vulkan.");
+
+      this->vk_command_buffers_count = 1;
+      this->vk_command_buffers = this->persistent_allocator.push<VkCommandBuffer>(this->vk_command_buffers_count);
+      VkCommandBufferAllocateInfo buffers_allocation_info =
+      {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = 0,
+        .commandPool        = this->vk_command_pool,
+        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = this->vk_command_buffers_count,
+      };
+      if (vkAllocateCommandBuffers(this->vk_device, &buffers_allocation_info, this->vk_command_buffers) != VK_SUCCESS) throw std::runtime_error("Failed to create command buffers for Vulkan.");
+    }
+
     scratch.die();
   }
   
@@ -985,11 +1084,12 @@ private:
 
   void terminate_vulkan(void)
   {
+    vkDestroyCommandPool(this->vk_device, this->vk_command_pool, 0);
     for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
       vkDestroyFramebuffer(this->vk_device, this->vk_swapchain_framebuffers[i], 0);
     
-    vkDestroyPipeline(this->vk_device, this->vk_pipeline, 0);
-    vkDestroyPipelineLayout(this->vk_device, this->vk_pipeline_layout, 0);
+    vkDestroyPipeline(this->vk_device, this->vk_graphics_pipeline, 0);
+    vkDestroyPipelineLayout(this->vk_device, this->vk_graphics_pipeline_layout, 0);
     vkDestroyRenderPass(this->vk_device, this->vk_render_pass, 0);
 
     vkDestroyShaderModule(this->vk_device, this->vk_basic_vert_shader, 0);
