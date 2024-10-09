@@ -8,6 +8,7 @@ public:
   void execute(void)
   {
     this->initialize();
+    ShowWindow(this->win32_window, this->win32_startup_info.wShowWindow);
 
     /* the main loop */
     Scratch scratch;
@@ -189,7 +190,6 @@ private:
       this->win32_instance,
       this);
     if (!this->win32_window) throw std::runtime_error("failed to create the main window.");
-    ShowWindow(this->win32_window, this->win32_startup_info.wShowWindow);
     scratch.die();
   }
 
@@ -321,7 +321,7 @@ private:
 
     VkCommandBuffer command_buffer = this->vk_command_buffers[0];
 
-    vkResetCommandBuffer(command_buffer, 0);
+    vkResetCommandPool(this->vk_device, this->vk_command_pool, 0);
     this->vk_record_command_buffer(command_buffer, image_index);
 
     /* wait for the color output of the first render pass before signaling the rendering finality semaphore */
@@ -387,12 +387,12 @@ private:
 
     const char *enabled_extension_names[] =
     {
+      /* VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME, */
     #if defined(DEBUGGING)
-      "VK_EXT_debug_utils",
+      VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
     #endif
-      "VK_KHR_surface",
-      "VK_KHR_win32_surface",
-      "VK_KHR_display",
+      VK_KHR_SURFACE_EXTENSION_NAME,
+      VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
     };
     uint enabled_extensions_count = countof(enabled_extension_names);
 
@@ -406,7 +406,7 @@ private:
         .applicationVersion = this->application_version,
         .pEngineName        = this->application_name,
         .engineVersion      = this->application_version,
-        .apiVersion         = VK_API_VERSION_1_0,
+        .apiVersion         = VK_API_VERSION_1_3,
       };
 
       VkInstanceCreateInfo instance_creation_info =
@@ -1126,7 +1126,7 @@ private:
       VkCommandPoolCreateInfo pool_creation_info =
       {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT /* VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT */,
         .queueFamilyIndex = this->vk_graphics_queue_family_index,
       };
       if (vkCreateCommandPool(this->vk_device, &pool_creation_info, 0, &this->vk_command_pool) != VK_SUCCESS) throw std::runtime_error("Failed to create a command pool for Vulkan.");
