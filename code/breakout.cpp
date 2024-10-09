@@ -204,6 +204,7 @@ private:
     
     printf("[Vulkan] ");
 
+  #if 0
     switch (message_severity)
     {     
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: printf("[verbose] "); break;
@@ -217,6 +218,7 @@ private:
     if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)             printf("[validation] ");
     if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)            printf("[performance] ");
     if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT) printf("[device_address_binding] ");
+  #endif
 
     printf("%s\n", callback_data->pMessage);
     return VK_FALSE;
@@ -248,14 +250,14 @@ private:
     {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
       .pNext = 0,
-      .flags = 0,
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
       .pInheritanceInfo = 0,
     };
     if (vkBeginCommandBuffer(command_buffer, &beginning_info) != VK_SUCCESS) throw std::runtime_error("Failed to begin recording a command buffer for Vulkan.");
 
     VkClearValue clear_values[] =
     {
-      {{{ 0.0f, 0.0f, 0.0f, 1.0f }}},
+      {{{ 0.0f, 0.0f, 0.0f, 0.0f }}},
     };
     constexpr uint clear_values_count = countof(clear_values);
     
