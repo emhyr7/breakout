@@ -1,5 +1,3 @@
-
-
 graphics pipelines:
 	-> input assembler (fixed-function)
 		* assembles vertexes.
@@ -22,3 +20,21 @@ DEFINITIONS
 
 	"fixed-function" - a predefined function that you can pass arguments to.
 	anything that isn't a fixed-function can be programmed by the user.
+
+-------------------------------------------------------------------------------
+
+frame:
+	-> wait for the previous frame to complete
+	-> acquire an image from the swapchain
+	-> record a command buffer
+		* the command buffer is used to draw onto the image acquired from the
+		  swapchain.
+	-> submit the command buffer recording
+	-> present the swapchain image
+
+-------------------------------------------------------------------------------
+
+	"semaphore" - defines the order at which operations execute on the GPU.
+
+	"fence" - blocks the host's execution to wait for the GPU to finish executing;
+	synchronizes the host and GPU.
