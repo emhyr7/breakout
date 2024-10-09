@@ -7,14 +7,34 @@ class Breakout
 public:
   void execute(void)
   {
+    LARGE_INTEGER beginning_time, ending_time;
+    LARGE_INTEGER clock_frequency;
+    uintl elapsed_time = 0;
+    QueryPerformanceFrequency(&clock_frequency);
+
+    QueryPerformanceCounter(&beginning_time);
+
     this->initialize();
     ShowWindow(this->win32_window, this->win32_startup_info.wShowWindow);
+
+    uint frames_count = 0;
 
     /* the main loop */
     Scratch scratch;
     context.allocator->derive(&scratch);
     for (;;)
     {
+      QueryPerformanceCounter(&ending_time);
+      elapsed_time += (ending_time.QuadPart - beginning_time.QuadPart) * 1000000 / clock_frequency.QuadPart;
+      beginning_time = ending_time;
+      ++frames_count;
+      if (elapsed_time >= 1000000)
+      {
+        printf("FPS: %u\n", frames_count);
+        frames_count = 0;
+        elapsed_time = 0;
+      }
+      
       scratch.die();
 
       /* retrieve and process window messages */
