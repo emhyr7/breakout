@@ -21,6 +21,7 @@
 #include <vulkan/vulkan.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 
@@ -56,6 +57,9 @@ using sints = sint16;
 using sint  = sint32;
 using sintl = sint64;
 
+using float32 = float;
+using float64 = double;
+
 using utf8  = char;
 using utf16 = wchar_t;
 using utf32 = uint32;
@@ -80,6 +84,8 @@ uint get_minimum(uint left, uint right);
 uint clamp(uint value, uint minimum, uint maximum);
 
 void fill_memory(byte value, void *memory, uint size);
+
+void copy_memory(void *destination, const void *memory, uint size);
 
 uint get_string_length(const utf8 *string);
 

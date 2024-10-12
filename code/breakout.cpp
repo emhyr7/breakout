@@ -2,6 +2,47 @@
 
 #include "breakout_allocators.cpp"
 
+struct vertex
+{
+  vec2 position;
+  vec3 color;
+  
+  static const VkVertexInputBindingDescription *get_input_binding_descriptions(uint32_t *count)
+  {
+    static const VkVertexInputBindingDescription descriptions[1] =
+    {
+      {
+        .binding   = 0,
+        .stride    = sizeof(vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+      },
+    };
+    *count = countof(descriptions);
+    return descriptions;
+  }
+
+  static const VkVertexInputAttributeDescription *get_input_attribute_descriptions(uint32_t *count)
+  {
+    static const VkVertexInputAttributeDescription descriptions[2] =
+    {
+      {
+        .location = 0,
+        .binding = 0,
+        .format = VK_FORMAT_R32G32_SFLOAT,
+        .offset = offsetof(vertex, position),
+      },
+      {
+        .location = 1,
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = offsetof(vertex, color),
+      },
+    };
+    *count = countof(descriptions);
+    return descriptions;
+  }
+};
+
 class Breakout
 {
 public:
@@ -122,7 +163,20 @@ private:
   VkSemaphore              vk_rendering_finality_semaphore;
   VkFence                  vk_in_flight_fence;
 
+  VkBuffer                 vk_vertex_buffer;
+  VkDeviceMemory           vk_vertex_buffer_memory;
 
+  float32 horizontal_position = 0;
+  float32 vertical_position   = 0;
+
+  static constexpr vertex vertices[] =
+  {
+    {{ 0.0, -0.5}, {1.0, 0.0, 0.0}},
+    {{ 0.5,  0.5}, {0.0, 1.0, 0.0}},
+    {{-0.5,  0.5}, {0.0, 0.0, 1.0}},
+  };
+  uint vertices_count = countof(vertices);
+  
 /******************************************************************************/
   
   static LRESULT CALLBACK win32_process_window_message(HWND window_handle, UINT message, WPARAM wparam, LPARAM lparam)
@@ -298,6 +352,11 @@ private:
     vkCmdBeginRenderPass(command_buffer, &render_pass_beginning_info, VK_SUBPASS_CONTENTS_INLINE);
     {
       vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, this->vk_graphics_pipeline);
+
+      VkBuffer vertex_buffers[] = {this->vk_vertex_buffer};
+      const uint vertex_buffers_count = countof(vertex_buffers);
+      VkDeviceSize offsets[] = {0};
+      vkCmdBindVertexBuffers(command_buffer, 0, vertex_buffers_count, vertex_buffers, offsets);
       
       VkViewport viewports[] =
       {
@@ -323,9 +382,8 @@ private:
       constexpr uint scissors_count = countof(scissors);
       vkCmdSetScissor(command_buffer, 0, scissors_count, scissors);
 
-      constexpr uint vertexes_count = 3; /* hardcoded in the vertex shader */
       constexpr uint instances_count = 1; /* idk what this is */
-      vkCmdDraw(command_buffer, vertexes_count, instances_count, 0, 0);
+      vkCmdDraw(command_buffer, vertices_count, instances_count, 0, 0);
     }
     vkCmdEndRenderPass(command_buffer);
     if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) throw std::runtime_error("Failed to end a command buffer for Vulkan");
@@ -482,7 +540,7 @@ private:
 
     const char *physical_device_extension_names[] =
     {
-      "VK_KHR_swapchain",
+      VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
     uint physical_device_extensions_count = countof(physical_device_extension_names);
 
@@ -600,18 +658,18 @@ private:
           {
             VkSurfaceCapabilitiesKHR *capabilities = &swapchain_details.capabilities;
             vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, this->vk_surface, capabilities);
-          #if 0
+          #if 1
             printf("swapchain_details.capabilities:\n");
-            printf("\tminImageCount: %u\n",       capabilities->minImageCount);
-            printf("\tmaxImageCount: %u\n",       capabilities->maxImageCount);
+            printf("\tminImageCount:       %u\n",       capabilities->minImageCount);
+            printf("\tmaxImageCount:       %u\n",       capabilities->maxImageCount);
             printf("\tcurrentExtent:\n");
-            printf("\t\twidth: %u\n",             capabilities->currentExtent.width);
+            printf("\t\twidth:  %u\n",             capabilities->currentExtent.width);
             printf("\t\theight: %u\n",            capabilities->currentExtent.height);
             printf("\tminImageExtent:\n");
-            printf("\t\twidth: %u\n",             capabilities->minImageExtent.width);
+            printf("\t\twidth:  %u\n",             capabilities->minImageExtent.width);
             printf("\t\theight: %u\n",            capabilities->minImageExtent.height);
             printf("\tmaxImageExtent:\n");
-            printf("\t\twidth: %u\n",             capabilities->maxImageExtent.width);
+            printf("\t\twidth:  %u\n",             capabilities->maxImageExtent.width);
             printf("\t\theight: %u\n",            capabilities->maxImageExtent.height);
             printf("\tmaxImageArrayLayers: %u\n", capabilities->maxImageArrayLayers);
           #endif
@@ -628,9 +686,9 @@ private:
               };
             }
             swapchain_details.images_count = swapchain_details.capabilities.minImageCount + 1;
-          #if 0
+          #if 1
             printf("swapchain_details.extent:\n");
-            printf("\twidth: %u\n", swapchain_details.extent.width);
+            printf("\twidth:  %u\n", swapchain_details.extent.width);
             printf("\theight: %u\n", swapchain_details.extent.height);
             printf("swapchain_details.images_count: %u\n", swapchain_details.images_count);
           #endif
@@ -648,9 +706,9 @@ private:
             for (uint i = 0; i < swapchain_details.formats_count; ++i)
             {
               VkSurfaceFormatKHR *format = swapchain_details.formats + i;
-            #if 0
+            #if 1
               printf("swapchain_details.formats[%u]:\n", i);
-              printf("\tformat: %i\n", format->format);
+              printf("\tformat:     %i\n", format->format);
               printf("\tcolorSpace: %i\n", format->colorSpace);
             #endif
               if (format->format == VK_FORMAT_B8G8R8A8_SRGB && format->colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
@@ -676,7 +734,7 @@ private:
             for (uint i = 0; i < swapchain_details.modes_count; ++i)
             {
               VkPresentModeKHR *mode = swapchain_details.modes + i;
-            #if 0
+            #if 1
               printf("swapchain_details.modes[%u]: %i\n", i, *mode);
             #endif
 
@@ -708,19 +766,6 @@ private:
       this->vk_swapchain_extent          = swapchain_details.extent;
     }
 
-  #if 0
-    uint32_t displays_count;
-    vkGetPhysicalDeviceDisplayPropertiesKHR(this->vk_physical_device, &displays_count, 0);
-    VkDisplayPropertiesKHR *displays_properties = scratch.push<VkDisplayPropertiesKHR>(displays_count);
-    for (uint i = 0; i < displays_count; ++i)
-    {
-      VkDisplayPropertiesKHR *display_properties = displays_properties + i;
-      printf("vulkan display: %s\n", display_properties->displayName);
-      printf("\tdimensions: %u %u\n", display_properties->physicalDimensions.width, display_properties->physicalDimensions.height);
-      printf("\tresolution: %u %u\n", display_properties->physicalResolution.width, display_properties->physicalResolution.height);
-    }
-  #endif
-    
     /* create a logical device */
     {
       float priority = 1.f;
@@ -959,10 +1004,8 @@ private:
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = 0,
         .flags = 0,
-        .vertexBindingDescriptionCount   = 0,
-        .pVertexBindingDescriptions      = 0,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions    = 0,
+        .pVertexBindingDescriptions   = vertex::get_input_binding_descriptions(&vertex_input_state_creation_info.vertexBindingDescriptionCount),
+        .pVertexAttributeDescriptions = vertex::get_input_attribute_descriptions(&vertex_input_state_creation_info.vertexAttributeDescriptionCount),
       };
 
       VkPipelineInputAssemblyStateCreateInfo input_assembly_state_creation_info =
@@ -1141,7 +1184,7 @@ private:
       }
     }
 
-    /* create the command buffer */
+    /* create the command pool */
     {
       VkCommandPoolCreateInfo pool_creation_info =
       {
@@ -1150,7 +1193,63 @@ private:
         .queueFamilyIndex = this->vk_graphics_queue_family_index,
       };
       if (vkCreateCommandPool(this->vk_device, &pool_creation_info, 0, &this->vk_command_pool) != VK_SUCCESS) throw std::runtime_error("Failed to create a command pool for Vulkan.");
+    }
 
+    /* create vertex buffers */
+    {
+      VkBufferCreateInfo buffer_creation_info =
+      {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = 0,
+        .flags = 0,
+        .size = this->vertices_count * sizeof(this->vertices[0]),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      };
+      if (vkCreateBuffer(this->vk_device, &buffer_creation_info, 0, &this->vk_vertex_buffer) != VK_SUCCESS) throw std::runtime_error("Failed to create a vertex buffer for Vulkan.");
+
+      VkMemoryRequirements memory_requirements;
+      vkGetBufferMemoryRequirements(this->vk_device, this->vk_vertex_buffer, &memory_requirements);
+      printf("memory_requirements:\n");
+      printf("\tsize:           %llu\n", memory_requirements.size);
+      printf("\talignment:      %llu\n", memory_requirements.alignment);
+      printf("\tmemoryTypeBits: %x\n",   memory_requirements.memoryTypeBits);
+
+      uint memory_type;
+      {
+        VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
+        vkGetPhysicalDeviceMemoryProperties(this->vk_physical_device, &physical_device_memory_properties);
+        uint i;
+        for (i = 0; i < physical_device_memory_properties.memoryTypeCount; ++i)
+        {
+          if ((memory_requirements.memoryTypeBits & (1 << i))
+              && (physical_device_memory_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)))
+          {
+            memory_type = i;
+            break;
+          }
+        }
+        if (i == physical_device_memory_properties.memoryTypeCount) throw std::runtime_error("Failed to gind suitable memory type for Vulkan.");
+      }
+
+      VkMemoryAllocateInfo allocation_info =
+      {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = 0,
+        .allocationSize = memory_requirements.size,
+        .memoryTypeIndex = memory_type,
+      };
+      if (vkAllocateMemory(this->vk_device, &allocation_info, 0, &this->vk_vertex_buffer_memory) != VK_SUCCESS) throw std::runtime_error("Failed to allocate vertex buffer memory for Vulkan.");
+      vkBindBufferMemory(this->vk_device, this->vk_vertex_buffer, this->vk_vertex_buffer_memory, 0);
+
+      void *memory;
+      vkMapMemory(this->vk_device, this->vk_vertex_buffer_memory, 0, buffer_creation_info.size, 0, &memory);
+      copy_memory(memory, this->vertices, this->vertices_count * sizeof(vertex));
+      vkUnmapMemory(this->vk_device, this->vk_vertex_buffer_memory);
+    }
+    
+    /* create command buffers */
+    {
       this->vk_command_buffers_count = 1;
       this->vk_command_buffers = this->persistent_allocator.push<VkCommandBuffer>(this->vk_command_buffers_count);
       VkCommandBufferAllocateInfo buffers_allocation_info =
@@ -1202,7 +1301,7 @@ private:
     vkDestroySemaphore(this->vk_device, this->vk_image_availability_semaphore, 0);
     vkDestroySemaphore(this->vk_device, this->vk_rendering_finality_semaphore, 0);
     vkDestroyFence(this->vk_device, this->vk_in_flight_fence, 0);
-    
+
     vkDestroyCommandPool(this->vk_device, this->vk_command_pool, 0);
     for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
       vkDestroyFramebuffer(this->vk_device, this->vk_swapchain_framebuffers[i], 0);
@@ -1211,6 +1310,9 @@ private:
     vkDestroyPipelineLayout(this->vk_device, this->vk_graphics_pipeline_layout, 0);
     vkDestroyRenderPass(this->vk_device, this->vk_render_pass, 0);
 
+    vkFreeMemory(this->vk_device, this->vk_vertex_buffer_memory, 0);
+    vkDestroyBuffer(this->vk_device, this->vk_vertex_buffer, 0);
+    
     vkDestroyShaderModule(this->vk_device, this->vk_basic_vert_shader, 0);
     vkDestroyShaderModule(this->vk_device, this->vk_basic_frag_shader, 0);
     
@@ -1282,6 +1384,11 @@ uint clamp(uint value, uint minimum, uint maximum)
 inline void fill_memory(byte value, void *memory, uint size)
 {
   memset(memory, value, size);
+}
+
+inline void copy_memory(void *destination, const void *memory, uint size)
+{
+  memcpy(destination, memory, size);
 }
 
 inline uint get_string_length(const char *string)
