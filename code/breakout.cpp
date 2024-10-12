@@ -5,7 +5,7 @@
 struct vertex
 {
   vec2 position;
-  vec3 color;
+  vec4 color;
   
   static const VkVertexInputBindingDescription *get_input_binding_descriptions(uint32_t *count)
   {
@@ -34,7 +34,7 @@ struct vertex
       {
         .location = 1,
         .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .format = VK_FORMAT_R32G32B32A32_SFLOAT,
         .offset = offsetof(vertex, color),
       },
     };
@@ -85,6 +85,11 @@ public:
         DispatchMessage(&this->win32_window_message);
       }
       if (this->requested_quit) break;
+
+      void *memory;
+      vkMapMemory(this->vk_device, this->vk_vertex_buffer_memory, 0, this->vk_vertex_buffer_size, 0, &memory);
+      copy_memory(memory, this->vertices, this->vertices_count * sizeof(vertex));
+      vkUnmapMemory(this->vk_device, this->vk_vertex_buffer_memory);
 
       this->vk_draw_frame();
 
@@ -165,17 +170,24 @@ private:
 
   VkBuffer                 vk_vertex_buffer;
   VkDeviceMemory           vk_vertex_buffer_memory;
+  uint                     vk_vertex_buffer_size;
+
+  float32 movement_speed = 0.075;
+
+  uint selected_vertex_index = 0;
 
   float32 horizontal_position = 0;
   float32 vertical_position   = 0;
 
-  static constexpr vertex vertices[] =
+  static constexpr vertex static_vertices[3] =
   {
-    {{ 0.0, -0.5}, {1.0, 0.0, 0.0}},
-    {{ 0.5,  0.5}, {0.0, 1.0, 0.0}},
-    {{-0.5,  0.5}, {0.0, 0.0, 1.0}},
+    {{ 0.0, -0.5}, {1.0, 0.0, 0.0, 0.0}},
+    {{ 0.5,  0.5}, {0.0, 1.0, 0.0, 0.0}},
+    {{-0.5,  0.5}, {0.0, 0.0, 1.0, 0.0}},
   };
-  uint vertices_count = countof(vertices);
+
+  vertex *vertices;
+  uint vertices_count = countof(static_vertices);
   
 /******************************************************************************/
   
@@ -199,7 +211,67 @@ private:
       break;
 
     case WM_KEYDOWN:
-      if (wparam == VK_ESCAPE) goto quit;
+      switch (wparam)
+      {
+      case VK_ESCAPE:
+        goto quit;
+      case VK_TAB:
+        if (self->selected_vertex_index++ >= self->vertices_count)
+        {
+          self->selected_vertex_index = 0;
+        }
+        break;
+      case VK_LEFT:
+        if ((1 << 15) & GetKeyState(VK_SHIFT))
+        {
+          vertex *vertex = self->vertices + self->selected_vertex_index;
+          vertex->position.x -= self->movement_speed;
+        }
+        else for (uint i = 0; i < self->vertices_count; ++i)
+        {
+          vertex *vertex = self->vertices + i;
+          vertex->position.x -= self->movement_speed;
+        }
+        break;
+      case VK_RIGHT:
+        if ((1 << 15) & GetKeyState(VK_SHIFT))
+        {
+          vertex *vertex = self->vertices + self->selected_vertex_index;
+          vertex->position.x += self->movement_speed;
+        }
+        else for (uint i = 0; i < self->vertices_count; ++i)
+        {
+          vertex *vertex = self->vertices + i;
+          vertex->position.x += self->movement_speed;
+        }
+        break;
+      case VK_UP:
+        if ((1 << 15) & GetKeyState(VK_SHIFT))
+        {
+          vertex *vertex = self->vertices + self->selected_vertex_index;
+          vertex->position.y -= self->movement_speed;
+        }
+        else for (uint i = 0; i < self->vertices_count; ++i)
+        {
+          vertex *vertex = self->vertices + i;
+          vertex->position.y -= self->movement_speed;
+        }
+        break;
+      case VK_DOWN:
+        if ((1 << 15) & GetKeyState(VK_SHIFT))
+        {
+          vertex *vertex = self->vertices + self->selected_vertex_index;
+          vertex->position.y += self->movement_speed;
+        }
+        else for (uint i = 0; i < self->vertices_count; ++i)
+        {
+          vertex *vertex = self->vertices + i;
+          vertex->position.y += self->movement_speed;
+        }
+        break;
+      default:
+        break;
+      }
       break;
 
     case WM_SIZE:
@@ -749,6 +821,7 @@ private:
             }
             if (!found_mode) swapchain_details.mode = VK_PRESENT_MODE_FIFO_KHR;
           }
+          swapchain_details.mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
           if (!swapchain_details.modes_count) suitable = false;
         }
         if (!suitable) continue;
@@ -1207,6 +1280,7 @@ private:
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
       };
       if (vkCreateBuffer(this->vk_device, &buffer_creation_info, 0, &this->vk_vertex_buffer) != VK_SUCCESS) throw std::runtime_error("Failed to create a vertex buffer for Vulkan.");
+      this->vk_vertex_buffer_size = buffer_creation_info.size;
 
       VkMemoryRequirements memory_requirements;
       vkGetBufferMemoryRequirements(this->vk_device, this->vk_vertex_buffer, &memory_requirements);
@@ -1242,10 +1316,8 @@ private:
       if (vkAllocateMemory(this->vk_device, &allocation_info, 0, &this->vk_vertex_buffer_memory) != VK_SUCCESS) throw std::runtime_error("Failed to allocate vertex buffer memory for Vulkan.");
       vkBindBufferMemory(this->vk_device, this->vk_vertex_buffer, this->vk_vertex_buffer_memory, 0);
 
-      void *memory;
-      vkMapMemory(this->vk_device, this->vk_vertex_buffer_memory, 0, buffer_creation_info.size, 0, &memory);
-      copy_memory(memory, this->vertices, this->vertices_count * sizeof(vertex));
-      vkUnmapMemory(this->vk_device, this->vk_vertex_buffer_memory);
+      this->vertices = new vertex[this->vertices_count];
+      copy_memory(this->vertices, this->static_vertices, this->vertices_count * sizeof(vertex));
     }
     
     /* create command buffers */
@@ -1310,8 +1382,8 @@ private:
     vkDestroyPipelineLayout(this->vk_device, this->vk_graphics_pipeline_layout, 0);
     vkDestroyRenderPass(this->vk_device, this->vk_render_pass, 0);
 
-    vkFreeMemory(this->vk_device, this->vk_vertex_buffer_memory, 0);
     vkDestroyBuffer(this->vk_device, this->vk_vertex_buffer, 0);
+    vkFreeMemory(this->vk_device, this->vk_vertex_buffer_memory, 0);
     
     vkDestroyShaderModule(this->vk_device, this->vk_basic_vert_shader, 0);
     vkDestroyShaderModule(this->vk_device, this->vk_basic_frag_shader, 0);
