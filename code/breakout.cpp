@@ -27,15 +27,15 @@ struct vertex
     {
       {
         .location = 0,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32_SFLOAT,
-        .offset = offsetof(vertex, position),
+        .binding  = 0,
+        .format   = VK_FORMAT_R32G32_SFLOAT,
+        .offset   = offsetof(vertex, position),
       },
       {
         .location = 1,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-        .offset = offsetof(vertex, color),
+        .binding  = 0,
+        .format   = VK_FORMAT_R32G32B32A32_SFLOAT,
+        .offset   = offsetof(vertex, color),
       },
     };
     *count = countof(descriptions);
@@ -172,18 +172,18 @@ private:
   VkDeviceMemory           vk_vertex_buffer_memory;
   uint                     vk_vertex_buffer_size;
 
-  float32 movement_speed = 0.075;
+  float32 movement_speed = 0.1;
 
   uint selected_vertex_index = 0;
 
   float32 horizontal_position = 0;
   float32 vertical_position   = 0;
 
-  static constexpr vertex static_vertices[3] =
+  static constexpr vertex static_vertices[] =
   {
-    {{ 0.0, -0.5}, {1.0, 0.0, 0.0, 0.0}},
-    {{ 0.5,  0.5}, {0.0, 1.0, 0.0, 0.0}},
-    {{-0.5,  0.5}, {0.0, 0.0, 1.0, 0.0}},
+    {{ 0.0, -0.5}, {1.0, 0.0, 0.0, 1.0}},
+    {{ 0.5,  0.5}, {0.0, 1.0, 0.0, 1.0}},
+    {{-0.5,  0.5}, {0.0, 0.0, 1.0, 1.0}},
   };
 
   vertex *vertices;
@@ -216,10 +216,7 @@ private:
       case VK_ESCAPE:
         goto quit;
       case VK_TAB:
-        if (self->selected_vertex_index++ >= self->vertices_count)
-        {
-          self->selected_vertex_index = 0;
-        }
+        if (self->selected_vertex_index++ >= self->vertices_count) self->selected_vertex_index = 0;
         break;
       case VK_LEFT:
         if ((1 << 15) & GetKeyState(VK_SHIFT))
