@@ -64,6 +64,8 @@ using utf8  = char;
 using utf16 = wchar_t;
 using utf32 = uint32;
 
+using bit = uint8;
+
 constexpr uint universal_alignment = alignof(max_align_t);
 
 constexpr uint memory_page_size = 4096;

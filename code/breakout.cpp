@@ -2,6 +2,11 @@
 
 #include "breakout_allocators.cpp"
 
+float32 lerp(float32 a, float32 b, float32 t)
+{
+  return a * (1 - t) + b * t;
+}
+
 struct vertex
 {
   vec2 position;
@@ -50,7 +55,6 @@ public:
   {
     LARGE_INTEGER beginning_time, ending_time;
     LARGE_INTEGER clock_frequency;
-    uintl elapsed_time = 0;
     QueryPerformanceFrequency(&clock_frequency);
 
     QueryPerformanceCounter(&beginning_time);
@@ -65,17 +69,18 @@ public:
     context.allocator->derive(&scratch);
     for (;;)
     {
+      if (this->elapsed_time_till_second >= 1000000)
+      {
+        printf("FPS: %u (%f)\n", frames_count, this->elapsed_time_till_second);
+        frames_count = 0;
+        this->elapsed_time_till_second = 0;
+      }
       QueryPerformanceCounter(&ending_time);
-      elapsed_time += (ending_time.QuadPart - beginning_time.QuadPart) * 1000000 / clock_frequency.QuadPart;
+      this->elapsed_time = (float32)(ending_time.QuadPart - beginning_time.QuadPart) * 1000000 / clock_frequency.QuadPart;
+      this->elapsed_time_till_second += this->elapsed_time;
       beginning_time = ending_time;
       ++frames_count;
-      if (elapsed_time >= 1000000)
-      {
-        printf("FPS: %u\n", frames_count);
-        frames_count = 0;
-        elapsed_time = 0;
-      }
-      
+
       scratch.die();
 
       /* retrieve and process window messages */
@@ -85,6 +90,75 @@ public:
         DispatchMessage(&this->win32_window_message);
       }
       if (this->requested_quit) break;
+
+#if 0
+      if (this->moved)
+      {
+        this->animation_time += this->elapsed_time_till_second / 1000000;
+        printf("this->animation_time: %f\n", this->animation_time);
+        if (this->animation_time >= this->animation_ending_time)
+        {
+          this->animation_time = 0;
+          this->moved = 0;
+        }
+      }
+    #endif    
+
+      if (this->moved_rightwards)
+      {
+        for (uint i = 0; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          vertex->position.x += this->movement_speed * (this->elapsed_time / this->animation_time_length);
+        }
+        this->rightward_animation_time += this->elapsed_time;
+        if (this->rightward_animation_time >= this->animation_time_length)
+        {
+          this->moved_rightwards = 0;
+        }
+      }
+
+      if (this->moved_leftwards)
+      {
+        for (uint i = 0; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          vertex->position.x -= this->movement_speed * (this->elapsed_time / this->animation_time_length);
+        }
+        this->leftward_animation_time += this->elapsed_time;
+        if (this->leftward_animation_time >= this->animation_time_length)
+        {
+          this->moved_leftwards = 0;
+        }
+      }
+
+      if (this->moved_upwards)
+      {
+        for (uint i = 0; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          vertex->position.y -= this->movement_speed * (this->elapsed_time / this->animation_time_length);
+        }
+        this->upward_animation_time += this->elapsed_time;
+        if (this->upward_animation_time >= this->animation_time_length)
+        {
+          this->moved_upwards = 0;
+        }
+      }
+
+      if (this->moved_downwards)
+      {
+        for (uint i = 0; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          vertex->position.y += this->movement_speed * (this->elapsed_time / this->animation_time_length);
+        }
+        this->downward_animation_time += this->elapsed_time;
+        if (this->downward_animation_time >= this->animation_time_length)
+        {
+          this->moved_downwards = 0;
+        }
+      }
 
       void *memory;
       vkMapMemory(this->vk_device, this->vk_vertex_buffer_memory, 0, this->vk_vertex_buffer_size, 0, &memory);
@@ -172,18 +246,31 @@ private:
   VkDeviceMemory           vk_vertex_buffer_memory;
   uint                     vk_vertex_buffer_size;
 
-  float32 movement_speed = 0.1;
+  bit     moved_upwards    : 1 = 0;
+  bit     moved_downwards  : 1 = 0;
+  bit     moved_leftwards  : 1 = 0;
+  bit     moved_rightwards : 1 = 0;
+  float32 movement_speed = 0.05;
 
   uint selected_vertex_index = 0;
 
   float32 horizontal_position = 0;
   float32 vertical_position   = 0;
 
+  float32 elapsed_time;
+  float32 elapsed_time_till_second = 0;
+  float32 upward_animation_time    = 0;
+  float32 downward_animation_time  = 0;
+  float32 rightward_animation_time = 0;
+  float32 leftward_animation_time  = 0;
+  
+  float32 animation_time_length = 250000;
+
   static constexpr vertex static_vertices[] =
   {
-    {{ 0.0, -0.5}, {1.0, 0.0, 0.0, 1.0}},
-    {{ 0.5,  0.5}, {0.0, 1.0, 0.0, 1.0}},
-    {{-0.5,  0.5}, {0.0, 0.0, 1.0, 1.0}},
+    {{-0.5, -0.5}, {1.0, 0.0, 0.0, 1.0}},
+    {{ 0.0,  0.5}, {0.0, 1.0, 0.0, 1.0}},
+    {{-1.0,  0.5}, {0.0, 0.0, 1.0, 1.0}},
   };
 
   vertex *vertices;
@@ -218,53 +305,21 @@ private:
       case VK_TAB:
         if (self->selected_vertex_index++ >= self->vertices_count) self->selected_vertex_index = 0;
         break;
-      case VK_LEFT:
-        if ((1 << 15) & GetKeyState(VK_SHIFT))
-        {
-          vertex *vertex = self->vertices + self->selected_vertex_index;
-          vertex->position.x -= self->movement_speed;
-        }
-        else for (uint i = 0; i < self->vertices_count; ++i)
-        {
-          vertex *vertex = self->vertices + i;
-          vertex->position.x -= self->movement_speed;
-        }
-        break;
-      case VK_RIGHT:
-        if ((1 << 15) & GetKeyState(VK_SHIFT))
-        {
-          vertex *vertex = self->vertices + self->selected_vertex_index;
-          vertex->position.x += self->movement_speed;
-        }
-        else for (uint i = 0; i < self->vertices_count; ++i)
-        {
-          vertex *vertex = self->vertices + i;
-          vertex->position.x += self->movement_speed;
-        }
-        break;
       case VK_UP:
-        if ((1 << 15) & GetKeyState(VK_SHIFT))
-        {
-          vertex *vertex = self->vertices + self->selected_vertex_index;
-          vertex->position.y -= self->movement_speed;
-        }
-        else for (uint i = 0; i < self->vertices_count; ++i)
-        {
-          vertex *vertex = self->vertices + i;
-          vertex->position.y -= self->movement_speed;
-        }
+        self->moved_upwards = 1;
+        self->upward_animation_time = 0;
         break;
       case VK_DOWN:
-        if ((1 << 15) & GetKeyState(VK_SHIFT))
-        {
-          vertex *vertex = self->vertices + self->selected_vertex_index;
-          vertex->position.y += self->movement_speed;
-        }
-        else for (uint i = 0; i < self->vertices_count; ++i)
-        {
-          vertex *vertex = self->vertices + i;
-          vertex->position.y += self->movement_speed;
-        }
+        self->moved_downwards = 1;
+        self->downward_animation_time = 0;
+        break;
+      case VK_RIGHT:
+        self->moved_rightwards = 1;
+        self->rightward_animation_time = 0;
+        break;
+      case VK_LEFT:
+        self->moved_leftwards = 1;
+        self->leftward_animation_time = 0;
         break;
       default:
         break;
@@ -1083,7 +1138,7 @@ private:
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .pNext = 0,
         .flags = 0,
-        .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
         .primitiveRestartEnable = VK_FALSE,
       };
 
