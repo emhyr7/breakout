@@ -5,5 +5,5 @@ programmed from scratch with zero _non-commercial non-debugging_ libraries.
 
 ## Building
 
-Simply invoke the `build.bat` file so an executable will be generated in the
-root directory.
+Simply invoke the `build.bat` file so an executable generates at the root root
+directory.

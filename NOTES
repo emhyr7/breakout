@@ -1,3 +1,11 @@
+TODO
+
+	[ ] rewrite to C. (C++ is too scary and too overwhelming).
+	
+	[ ] input system.
+
+-------------------------------------------------------------------------------
+
 graphics pipelines:
 	-> input assembler (fixed-function)
 		* assembles vertexes.
