@@ -121,12 +121,25 @@ public:
     #endif
 
       {
+        if (this->do_add_force)
+        {
+          this->force += vec2{0, 0.08};
+          this->do_add_force = 0;
+        }
+
         vec2 velocity = this->speed * (this->direction.x && this->direction.y ? normalize(this->direction) : this->direction);
-        velocity -= this->gravity;
+        velocity += this->gravity;
+        velocity += this->force;
 
         velocity.y = -velocity.y;
         float32 delta = 1 / this->elapsed_time;
         velocity *= delta;
+
+        vec2 x = this->force;
+        x /= 2, x *= delta;
+        this->force -= x;
+        if (this->force.y < 0) this->force.y = 0;
+
         for (uint i = 0; i < this->vertices_count; ++i)
         {
           vertex *vertex = this->vertices + i;
@@ -224,9 +237,11 @@ private:
 
   vec2 direction = {0, 0};
   vec2 speed     = {0.05, 0.05};
+  vec2 gravity   = {0, -0.01};
 
-  vec2 gravity   = {0, 0.01};
-
+  bit do_add_force : 1 = 0;
+  vec2 force = {0, 0};
+  
   uint selected_vertex_index = 0;
 
   float32 elapsed_time;
@@ -271,6 +286,9 @@ private:
       case VK_TAB:
         if (self->selected_vertex_index++ >= self->vertices_count) self->selected_vertex_index = 0;
         break;
+      case VK_SPACE:
+        self->do_add_force = 1;
+        break;
       case VK_UP:
         self->direction.y = 1;
         break;
@@ -285,8 +303,6 @@ private:
         break;
       default:
         break;
-      }
-      {
       }
       break;
 
