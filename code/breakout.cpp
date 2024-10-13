@@ -48,7 +48,7 @@ struct vertex
   }
 };
 
-using direction = vec2;
+using Direction = vec2;
 
 struct particle
 {
@@ -58,7 +58,7 @@ struct particle
     {{ 0.0,   0.05}, {0.0, 1.0, 0.0, 1.0}},
     {{-0.1,   0.05}, {0.0, 0.0, 1.0, 1.0}},
   };
-  direction direction;
+  Direction direction;
 };
 
 particle particles[100];
@@ -120,10 +120,11 @@ public:
       }
     #endif
 
+      /* simulate */
       {
         if (this->do_add_force)
         {
-          this->force += vec2{0, 0.08};
+          this->force += vec2{0, 0.1};
           this->do_add_force = 0;
         }
 
@@ -145,6 +146,27 @@ public:
           vertex *vertex = this->vertices + i;
           vertex->position += velocity;
         }
+        
+        Direction counter_force = {0, 0};
+        for (uint i = 0; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          if (vertex->position.y < -1)
+            counter_force.y = -velocity.y;
+          else if (vertex->position.y >  1)
+            counter_force.y = -velocity.y;
+          if (vertex->position.x >  1)
+            counter_force.x = -velocity.x;
+          else if (vertex->position.x < -1)
+            counter_force.x = -velocity.x;
+        }
+
+        for (uint i = 0; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          vertex->position += counter_force;
+        }
+        
       }
 
       {
@@ -249,9 +271,9 @@ private:
   
   static constexpr vertex static_vertices[3] =
   {
-    {{-0.005, -0.005}, {1.0, 0.0, 0.0, 1.0}},
-    {{ 0.0,    0.005}, {0.0, 1.0, 0.0, 1.0}},
-    {{-0.01,   0.005}, {0.0, 0.0, 1.0, 1.0}},
+    {{-0.05, -0.05}, {1.0, 0.0, 0.0, 1.0}},
+    {{ 0.0,   0.05}, {0.0, 1.0, 0.0, 1.0}},
+    {{-0.1,   0.05}, {0.0, 0.0, 1.0, 1.0}},
   };
 
   vertex *vertices;
