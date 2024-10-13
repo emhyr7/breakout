@@ -11,7 +11,7 @@ struct vertex
 {
   vec2 position;
   vec4 color;
-  
+
   static const VkVertexInputBindingDescription *get_input_binding_descriptions(uint32_t *count)
   {
     static const VkVertexInputBindingDescription descriptions[1] =
@@ -48,6 +48,22 @@ struct vertex
   }
 };
 
+using direction = vec2;
+
+struct particle
+{
+  vertex vertices[3] =
+  {
+    {{-0.05, -0.05}, {1.0, 0.0, 0.0, 1.0}},
+    {{ 0.0,   0.05}, {0.0, 1.0, 0.0, 1.0}},
+    {{-0.1,   0.05}, {0.0, 0.0, 1.0, 1.0}},
+  };
+  direction direction;
+};
+
+particle particles[100];
+uint     particles_count = countof(particles);
+
 class Breakout
 {
 public:
@@ -67,11 +83,11 @@ public:
     /* the main loop */
     Scratch scratch;
     context.allocator->derive(&scratch);
+
     for (;;)
     {
       if (this->elapsed_time_till_second >= 1000000)
       {
-        printf("FPS: %u (%f)\n", frames_count, this->elapsed_time_till_second);
         frames_count = 0;
         this->elapsed_time_till_second = 0;
       }
@@ -91,7 +107,7 @@ public:
       }
       if (this->requested_quit) break;
 
-#if 0
+    #if 0
       if (this->moved)
       {
         this->animation_time += this->elapsed_time_till_second / 1000000;
@@ -102,68 +118,28 @@ public:
           this->moved = 0;
         }
       }
-    #endif    
+    #endif
 
-      if (this->moved_rightwards)
       {
+        vec2 velocity = this->speed * (this->direction.x && this->direction.y ? normalize(this->direction) : this->direction);
+        velocity -= this->gravity;
+
+        velocity.y = -velocity.y;
+        float32 delta = 1 / this->elapsed_time;
+        velocity *= delta;
         for (uint i = 0; i < this->vertices_count; ++i)
         {
           vertex *vertex = this->vertices + i;
-          vertex->position.x += this->movement_speed * (this->elapsed_time / this->animation_time_length);
-        }
-        this->rightward_animation_time += this->elapsed_time;
-        if (this->rightward_animation_time >= this->animation_time_length)
-        {
-          this->moved_rightwards = 0;
+          vertex->position += velocity;
         }
       }
 
-      if (this->moved_leftwards)
       {
-        for (uint i = 0; i < this->vertices_count; ++i)
-        {
-          vertex *vertex = this->vertices + i;
-          vertex->position.x -= this->movement_speed * (this->elapsed_time / this->animation_time_length);
-        }
-        this->leftward_animation_time += this->elapsed_time;
-        if (this->leftward_animation_time >= this->animation_time_length)
-        {
-          this->moved_leftwards = 0;
-        }
+        void *memory;
+        vkMapMemory(this->vk_device, this->vk_vertex_buffer_memory, 0, this->vk_vertex_buffer_size, 0, &memory);
+        copy_memory(memory, this->vertices, this->vertices_count * sizeof(vertex));
+        vkUnmapMemory(this->vk_device, this->vk_vertex_buffer_memory);
       }
-
-      if (this->moved_upwards)
-      {
-        for (uint i = 0; i < this->vertices_count; ++i)
-        {
-          vertex *vertex = this->vertices + i;
-          vertex->position.y -= this->movement_speed * (this->elapsed_time / this->animation_time_length);
-        }
-        this->upward_animation_time += this->elapsed_time;
-        if (this->upward_animation_time >= this->animation_time_length)
-        {
-          this->moved_upwards = 0;
-        }
-      }
-
-      if (this->moved_downwards)
-      {
-        for (uint i = 0; i < this->vertices_count; ++i)
-        {
-          vertex *vertex = this->vertices + i;
-          vertex->position.y += this->movement_speed * (this->elapsed_time / this->animation_time_length);
-        }
-        this->downward_animation_time += this->elapsed_time;
-        if (this->downward_animation_time >= this->animation_time_length)
-        {
-          this->moved_downwards = 0;
-        }
-      }
-
-      void *memory;
-      vkMapMemory(this->vk_device, this->vk_vertex_buffer_memory, 0, this->vk_vertex_buffer_size, 0, &memory);
-      copy_memory(memory, this->vertices, this->vertices_count * sizeof(vertex));
-      vkUnmapMemory(this->vk_device, this->vk_vertex_buffer_memory);
 
       this->vk_draw_frame();
 
@@ -246,31 +222,21 @@ private:
   VkDeviceMemory           vk_vertex_buffer_memory;
   uint                     vk_vertex_buffer_size;
 
-  bit     moved_upwards    : 1 = 0;
-  bit     moved_downwards  : 1 = 0;
-  bit     moved_leftwards  : 1 = 0;
-  bit     moved_rightwards : 1 = 0;
-  float32 movement_speed = 0.05;
+  vec2 direction = {0, 0};
+  vec2 speed     = {0.05, 0.05};
+
+  vec2 gravity   = {0, 0.01};
 
   uint selected_vertex_index = 0;
 
-  float32 horizontal_position = 0;
-  float32 vertical_position   = 0;
-
   float32 elapsed_time;
   float32 elapsed_time_till_second = 0;
-  float32 upward_animation_time    = 0;
-  float32 downward_animation_time  = 0;
-  float32 rightward_animation_time = 0;
-  float32 leftward_animation_time  = 0;
   
-  float32 animation_time_length = 250000;
-
-  static constexpr vertex static_vertices[] =
+  static constexpr vertex static_vertices[3] =
   {
-    {{-0.5, -0.5}, {1.0, 0.0, 0.0, 1.0}},
-    {{ 0.0,  0.5}, {0.0, 1.0, 0.0, 1.0}},
-    {{-1.0,  0.5}, {0.0, 0.0, 1.0, 1.0}},
+    {{-0.005, -0.005}, {1.0, 0.0, 0.0, 1.0}},
+    {{ 0.0,    0.005}, {0.0, 1.0, 0.0, 1.0}},
+    {{-0.01,   0.005}, {0.0, 0.0, 1.0, 1.0}},
   };
 
   vertex *vertices;
@@ -306,20 +272,38 @@ private:
         if (self->selected_vertex_index++ >= self->vertices_count) self->selected_vertex_index = 0;
         break;
       case VK_UP:
-        self->moved_upwards = 1;
-        self->upward_animation_time = 0;
+        self->direction.y = 1;
         break;
       case VK_DOWN:
-        self->moved_downwards = 1;
-        self->downward_animation_time = 0;
+        self->direction.y = -1;
         break;
       case VK_RIGHT:
-        self->moved_rightwards = 1;
-        self->rightward_animation_time = 0;
+        self->direction.x = 1;
         break;
       case VK_LEFT:
-        self->moved_leftwards = 1;
-        self->leftward_animation_time = 0;
+        self->direction.x = -1;
+        break;
+      default:
+        break;
+      }
+      {
+      }
+      break;
+
+    case WM_KEYUP:
+      switch (wparam)
+      {
+      case VK_UP:
+        self->direction.y = 0;
+        break;
+      case VK_DOWN:
+        self->direction.y = 0;
+        break;
+      case VK_RIGHT:
+        self->direction.x = 0;
+        break;
+      case VK_LEFT:
+        self->direction.x = 0;
         break;
       default:
         break;
@@ -381,8 +365,8 @@ private:
       WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME,
       CW_USEDEFAULT,
       CW_USEDEFAULT,
-      CW_USEDEFAULT,
-      CW_USEDEFAULT,
+      980,
+      980,
       0,
       0,
       this->win32_instance,
