@@ -133,16 +133,15 @@ public:
         vec2 x = this->force;
         x /= 2, x *= delta;
         this->force -= x;
-        //if (this->force.y < 0) this->force.y = 0;
 
-        for (uint i = 0; i < this->vertices_count; ++i)
+        for (uint i = 0; i < 3; ++i)
         {
           vertex *vertex = this->vertices + i;
           vertex->position += velocity;
         }
-        
+
         Direction counter_force = {0, 0};
-        for (uint i = 0; i < this->vertices_count; ++i)
+        for (uint i = 0; i < 3; ++i)
         {
           vertex *vertex = this->vertices + i;
           if (vertex->position.y < -1)
@@ -155,12 +154,34 @@ public:
             counter_force.x = -velocity.x;
         }
 
-        for (uint i = 0; i < this->vertices_count; ++i)
+        for (uint i = 0; i < 3; ++i)
         {
           vertex *vertex = this->vertices + i;
           vertex->position += counter_force;
         }
-        
+
+        static float32 elapsed = 0;
+        if (this->spawn_bullet)
+        {
+          if (elapsed >= 1000000 / 4)
+          {
+            vertex *bullet_vertices = &this->vertices[this->vertices_count];
+            copy_memory(bullet_vertices, this->vertices, sizeof(static_vertices));
+            this->vertices_count += countof(this->static_vertices);
+
+            elapsed = 0;
+          }
+          elapsed += this->elapsed_time;
+        }
+        else elapsed = 1000000 / 4;
+
+        for (uint i = 3; i < this->vertices_count; ++i)
+        {
+          vertex *vertex = this->vertices + i;
+          vec2 force = {0, -0.05};
+          force *= delta;
+          vertex->position += force;
+        }
       }
 
       {
@@ -177,7 +198,7 @@ public:
       {
         VkSurfaceCapabilitiesKHR capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->vk_physical_device, this->vk_surface, &capabilities);
-        
+
         if (capabilities.currentExtent.width != uint32_maximum)
           this->vk_swapchain_extent = capabilities.currentExtent;
         else
@@ -255,16 +276,18 @@ private:
   vec2 speed     = {0.05, 0.05};
   vec2 gravity   = {0, -0.04};
 
+  bit spawn_bullet : 1 = 0;
+
   bit gravity_enabled : 1 = 1;
 
   vec2 force = {0, 0};
-  
+
   uint selected_vertex_index = 0;
 
   float32 elapsed_time;
   float32 elapsed_time_till_second = 0;
-  
-  static constexpr vertex static_vertices[3] =
+
+  static constexpr vertex static_vertices[] =
   {
     {{-0.05, -0.05}, {1.0, 0.0, 0.0, 1.0}},
     {{ 0.0,   0.05}, {0.0, 1.0, 0.0, 1.0}},
@@ -273,9 +296,10 @@ private:
 
   vertex *vertices;
   uint vertices_count = countof(static_vertices);
-  
+  uint vertices_capacity = 1024;
+
 /******************************************************************************/
-  
+
   static LRESULT CALLBACK win32_process_window_message(HWND window_handle, UINT message, WPARAM wparam, LPARAM lparam)
   {
     LRESULT result = 0;
@@ -304,27 +328,19 @@ private:
         if (self->selected_vertex_index++ >= self->vertices_count) self->selected_vertex_index = 0;
         break;
       case VK_SPACE:
+        self->spawn_bullet = 1;
+        break;
       case 'W':
-        if (!(GetKeyState(VK_SHIFT) & 0x8000))
-        {
-          self->force += vec2{0,  0.1};
-        }
-        else
-        {
+        self->force += vec2{0,  0.1};
+        break;
       case 'S':
-          self->force += vec2{0, -0.1};
-        }
+        self->force += vec2{0, -0.1};
         break;
       case 'D':
-        if (!(GetKeyState(VK_SHIFT) & 0x8000))
-        {
-          self->force += vec2{0.1, 0};
-        }
-        else
-        {
+        self->force += vec2{0.1, 0};
+        break;
       case 'A':
-          self->force += vec2{-0.1, 0};
-        }
+        self->force += vec2{-0.1, 0};
         break;
       case 'G':
         self->gravity_enabled ^= 1;
@@ -349,6 +365,9 @@ private:
     case WM_KEYUP:
       switch (wparam)
       {
+      case VK_SPACE:
+        self->spawn_bullet = 0;
+        break;
       case VK_UP:
         self->direction.y = 0;
         break;
@@ -383,7 +402,7 @@ private:
       result = DefWindowProc(window_handle, message, wparam, lparam);
       break;
     }
-    
+
     return result;
   }
 
@@ -439,12 +458,12 @@ private:
   {
     if (message_severity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
       return VK_FALSE;
-    
+
     printf("[Vulkan] ");
 
   #if 0
     switch (message_severity)
-    {     
+    {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: printf("[verbose] "); break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    printf("[info] ");    break;
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: printf("[warning] "); break;
@@ -498,7 +517,7 @@ private:
       {{{ 0.0f, 0.0f, 0.0f, 0.0f }}},
     };
     constexpr uint clear_values_count = countof(clear_values);
-    
+
     VkRenderPassBeginInfo render_pass_beginning_info =
     {
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -521,7 +540,7 @@ private:
       const uint vertex_buffers_count = countof(vertex_buffers);
       VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(command_buffer, 0, vertex_buffers_count, vertex_buffers, offsets);
-      
+
       VkViewport viewports[] =
       {
         {
@@ -585,11 +604,11 @@ private:
         .signalSemaphoreCount = signaling_semaphores_count,
         .pSignalSemaphores    = signaling_semaphores,
       };
-      if (vkQueueSubmit(this->vk_graphics_queue, 1, &submission_info, this->vk_in_flight_fence) != VK_SUCCESS) throw std::runtime_error("Failed to submit to queue for Vulkan.");     
+      if (vkQueueSubmit(this->vk_graphics_queue, 1, &submission_info, this->vk_in_flight_fence) != VK_SUCCESS) throw std::runtime_error("Failed to submit to queue for Vulkan.");
 
       VkSwapchainKHR swapchains[] = { this->vk_swapchain };
       constexpr uint swapchains_count = countof(swapchains);
-      
+
       VkPresentInfoKHR presentation_info =
       {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -680,7 +699,7 @@ private:
       VkResult result = vkCreateInstance(&instance_creation_info, 0, &this->vk_instance);
       if (result != VK_SUCCESS) throw std::runtime_error("failed to create an instance for Vulkan.");
 
-    #if defined(DEBUGGING)   
+    #if defined(DEBUGGING)
       auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(this->vk_instance, "vkCreateDebugUtilsMessengerEXT");
       if (!vkCreateDebugUtilsMessengerEXT) throw std::runtime_error("failed to get `vkCreateDebugUtilsMessengerEXT`.");
       result = vkCreateDebugUtilsMessengerEXT(this->vk_instance, &debug_messenger_creation_info, 0, &this->vk_debug_messenger);
@@ -708,7 +727,7 @@ private:
     };
     uint physical_device_extensions_count = countof(physical_device_extension_names);
 
-    constexpr uint queue_stuff_family_indexes_count = 2; 
+    constexpr uint queue_stuff_family_indexes_count = 2;
     struct Queue_Stuff
     {
       union
@@ -733,7 +752,7 @@ private:
       uint modes_count;
       VkPresentModeKHR *modes;
       VkSurfaceFormatKHR format;
-      VkPresentModeKHR   mode; 
+      VkPresentModeKHR   mode;
       VkExtent2D         extent;
       uint               images_count;
     } swapchain_details;
@@ -816,7 +835,7 @@ private:
         }
         if (!suitable) continue;
 
-        /* check swapchain details */   
+        /* check swapchain details */
         {
           /* check capabilities */
           {
@@ -979,7 +998,7 @@ private:
       };
       VkResult result = vkCreateDevice(this->vk_physical_device, &device_creation_info, 0, &this->vk_device);
       if (result != VK_SUCCESS) throw std::runtime_error("failed to create a device for Vulkan.");
-    
+
       this->vk_graphics_queue_family_index     = queue_stuff.graphics_family_index;
       this->vk_presentation_queue_family_index = queue_stuff.presentation_family_index;
 
@@ -1178,7 +1197,7 @@ private:
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .pNext = 0,
         .flags = 0,
-        .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+        .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE,
       };
 
@@ -1275,7 +1294,7 @@ private:
         VK_DYNAMIC_STATE_SCISSOR,
       };
       constexpr uint dynamic_states_count = countof(dynamic_states);
-      
+
       VkPipelineDynamicStateCreateInfo dynamic_state_creation_info =
       {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -1283,7 +1302,7 @@ private:
         .flags = 0,
         .dynamicStateCount = dynamic_states_count,
         .pDynamicStates    = dynamic_states,
-      };     
+      };
 
       VkPipelineLayoutCreateInfo pipeline_layout_creation_info =
       {
@@ -1294,7 +1313,7 @@ private:
         .pSetLayouts            = 0,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges    = 0,
-        
+
       };
       if (vkCreatePipelineLayout(this->vk_device, &pipeline_layout_creation_info, 0, &this->vk_graphics_pipeline_layout) != VK_SUCCESS) throw std::runtime_error("Failed to create a pipeline layout for Vulkan.");
 
@@ -1367,7 +1386,7 @@ private:
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .pNext = 0,
         .flags = 0,
-        .size = this->vertices_count * sizeof(this->vertices[0]),
+        .size = this->vertices_capacity * sizeof(this->vertices[0]),
         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
       };
@@ -1408,10 +1427,10 @@ private:
       if (vkAllocateMemory(this->vk_device, &allocation_info, 0, &this->vk_vertex_buffer_memory) != VK_SUCCESS) throw std::runtime_error("Failed to allocate vertex buffer memory for Vulkan.");
       vkBindBufferMemory(this->vk_device, this->vk_vertex_buffer, this->vk_vertex_buffer_memory, 0);
 
-      this->vertices = new vertex[this->vertices_count];
+      this->vertices = new vertex[1024];
       copy_memory(this->vertices, this->static_vertices, this->vertices_count * sizeof(vertex));
     }
-    
+
     /* create command buffers */
     {
       this->vk_command_buffers_count = 1;
@@ -1437,7 +1456,7 @@ private:
       };
       if (vkCreateSemaphore(this->vk_device, &semaphore_creation_info, 0, &this->vk_image_availability_semaphore) != VK_SUCCESS) throw std::runtime_error("Failed to create the image availability semaphore for Vulkan.");
       if (vkCreateSemaphore(this->vk_device, &semaphore_creation_info, 0, &this->vk_rendering_finality_semaphore) != VK_SUCCESS) throw std::runtime_error("Failed to create the rendering finality semaphore for Vulkan.");
-      
+
       VkFenceCreateInfo fence_creation_info =
       {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -1445,12 +1464,12 @@ private:
         .flags = VK_FENCE_CREATE_SIGNALED_BIT,
       };
       if (vkCreateFence(this->vk_device, &fence_creation_info, 0, &this->vk_in_flight_fence) != VK_SUCCESS) throw std::runtime_error("Failed to create the in flight fence for Vulkan.");
-      
+
     }
 
     scratch.die();
   }
-  
+
   void initialize(void)
   {
     /* initialize modules */
@@ -1469,24 +1488,24 @@ private:
     vkDestroyCommandPool(this->vk_device, this->vk_command_pool, 0);
     for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
       vkDestroyFramebuffer(this->vk_device, this->vk_swapchain_framebuffers[i], 0);
-    
+
     vkDestroyPipeline(this->vk_device, this->vk_graphics_pipeline, 0);
     vkDestroyPipelineLayout(this->vk_device, this->vk_graphics_pipeline_layout, 0);
     vkDestroyRenderPass(this->vk_device, this->vk_render_pass, 0);
 
     vkDestroyBuffer(this->vk_device, this->vk_vertex_buffer, 0);
     vkFreeMemory(this->vk_device, this->vk_vertex_buffer_memory, 0);
-    
+
     vkDestroyShaderModule(this->vk_device, this->vk_basic_vert_shader, 0);
     vkDestroyShaderModule(this->vk_device, this->vk_basic_frag_shader, 0);
-    
+
     for (uint i = 0; i < this->vk_swapchain_images_count; ++i)
       vkDestroyImageView(this->vk_device, this->vk_swapchain_image_views[i], 0);
 
     vkDestroySwapchainKHR(this->vk_device, this->vk_swapchain, 0);
     vkDestroySurfaceKHR(this->vk_instance, this->vk_surface, 0);
     vkDestroyDevice(this->vk_device, 0);
-  #if defined(DEBUGGING) 
+  #if defined(DEBUGGING)
     auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(this->vk_instance, "vkDestroyDebugUtilsMessengerEXT");
     if (vkDestroyDebugUtilsMessengerEXT) vkDestroyDebugUtilsMessengerEXT(this->vk_instance, this->vk_debug_messenger, 0);
   #endif
@@ -1610,7 +1629,7 @@ Span<uintb> read_from_file_quickly( const char *path)
   read_from_file(result.items, result.count, handle);
   close_file(handle);
   return result;
-  
+
 }
 
 void close_file(Handle handle)

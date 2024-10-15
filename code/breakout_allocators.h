@@ -22,7 +22,7 @@ struct Allocator
   /* stenography */
 
   void *allocate(uint size, uint alignment);
- 
+
   void deallocate(void *memory, uint size);
 
   void *reallocate(void *memory, uint size, uint new_size, uint new_alignment);
@@ -66,7 +66,7 @@ struct Linear_Allocator_Derivative
 struct Linear_Allocator
 {
   static constexpr uint default_minimum_block_size = memory_page_size - sizeof(Memory_Block);
-  
+
   Memory_Block *block = 0;
 
   /* options */
